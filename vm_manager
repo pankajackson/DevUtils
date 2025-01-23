@@ -1,0 +1,241 @@
+#!/usr/bin/env python3
+
+"""
+Script: Virtual Machine Manager
+Author: Pankaj Jackson
+Email: pankajackson@live.co.uk
+Description: A Python script for managing virtual machines using VBoxManage. 
+             It supports creating, starting, stopping, shutting down, and destroying VMs.
+Usage: Run the script with the appropriate subcommand (e.g., create, start, stop).
+License: MIT License
+"""
+
+import subprocess, argparse
+from pathlib import Path
+from datetime import datetime
+
+
+class VirtualMachine:
+
+    def __init__(
+        self,
+        name: str,
+        image_file: str,
+        memory: int | None = 2000,
+        cpu: int | None = 2,
+        disk_size: int | None = 30000,
+        network: str | None = "nat",
+    ) -> None:
+        self.name = name.replace(" ", "_")
+        self.image_file = Path(image_file) if image_file else None
+        self.memory = memory
+        self.cpu = cpu
+        self.disk_size = disk_size
+        self.network = network
+        self.cmds = {}
+        self.setup_cmds()
+
+    def get_vm_sys_properties(self) -> dict[str, str]:
+        def prop_map_kv(x: str):
+            kv = x.split(":")
+            if 2 == len(kv):
+                return {kv[0].strip(): kv[1].strip()}
+            return
+
+        def property_list_to_dict(
+            property_map_list: list[dict[str, str]]
+        ) -> dict[str, str]:
+            prop_dict: dict[str, str] = {}
+            for prop in property_map_list:
+                for k, v in prop.items():
+                    prop_dict[k] = v
+            return prop_dict
+
+        vb_props_string = subprocess.run(
+            "VBoxManage list systemproperties",
+            capture_output=True,
+            shell=True,
+        ).stdout.decode("utf-8")
+        vb_pros_string_list = vb_props_string.split("\n")
+        vb_pros_kv_list = list(map(prop_map_kv, vb_pros_string_list))
+        vb_pros_kv_list_validated = [p for p in vb_pros_kv_list if p]
+        vb_pros_kv = property_list_to_dict(vb_pros_kv_list_validated)
+
+        return vb_pros_kv
+
+    def get_vm_property(self, prop: str) -> str | None:
+        property_list = self.get_vm_sys_properties()
+        val = next((v for k, v in property_list.items() if k == prop), None)
+        return val
+
+    def run_cmd(self, cmd: str):
+        result = subprocess.run(
+            cmd,
+            shell=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        if result.returncode != 0:
+            raise Exception(
+                f"\nCommand failed: {cmd}\nSTDERR: {result.stderr.decode('utf-8')}\nSTDOUT: {result.stdout.decode('utf-8')}\nCODE: {result.returncode}"
+            )
+        return result.stdout.decode("utf-8")
+
+    def run_cmd_set(self, cmd_set: list[str]) -> None:
+        for cmd in cmd_set:
+            self.run_cmd(cmd)
+
+    def setup_cmds(self) -> None:
+        base_dir = self.get_vm_property("Default machine folder")
+        disk_path = (
+            f"{base_dir}/{self.name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.vdi"
+        )
+        self.cmds = {
+            "register_vm": [
+                f"VBoxManage createvm --name {self.name} --register --basefolder '{base_dir}'"
+            ],
+            "configure_vm": [
+                f"VBoxManage modifyvm {self.name} --memory {self.memory} --cpus {self.cpu}",
+                f"VBoxManage modifyvm {self.name} --nic1 {self.network} --cableconnected1 on",
+            ],
+            "add_storage": [
+                f"VBoxManage createhd --filename '{disk_path}' --size {self.disk_size}",
+                f"VBoxManage storagectl {self.name} --name 'SATA Controller' --add sata --controller IntelAhci",
+                f"VBoxManage storageattach {self.name} --storagectl 'SATA Controller' --port 0 --device 0 --type hdd --medium '{disk_path}'",
+                f"VBoxManage storageattach {self.name} --storagectl 'SATA Controller' --port 1 --device 0 --type dvddrive --medium '{self.image_file}'",
+            ],
+            "start_vm": [
+                f"VBoxManage startvm {self.name}",
+            ],
+            "stop_vm": [
+                f"VBoxManage controlvm {self.name} poweroff",
+            ],
+            "shutdown_vm": [
+                f"VBoxManage controlvm {self.name} poweroff",
+            ],
+            "destroy_vm": [
+                f"VBoxManage unregistervm {self.name} --delete",
+            ],
+        }
+
+    def create(self) -> None:
+        self.run_cmd_set(self.cmds["register_vm"])
+        self.run_cmd_set(self.cmds["configure_vm"])
+        self.run_cmd_set(self.cmds["add_storage"])
+
+    def start(self) -> None:
+        self.run_cmd_set(self.cmds["start_vm"])
+
+    def stop(self) -> None:
+        self.run_cmd_set(self.cmds["stop_vm"])
+
+    def shutdown(self) -> None:
+        self.run_cmd_set(self.cmds["shutdown_vm"])
+
+    def destroy(self) -> None:
+        self.run_cmd_set(self.cmds["destroy_vm"])
+
+    def list(self) -> None:
+        all_vms = self.run_cmd("VBoxManage list vms").splitlines()
+        running_vms = self.run_cmd("VBoxManage list runningvms").splitlines()
+        for vm in all_vms:
+            print(vm.split('"')[1], "Running" if vm in running_vms else "Stopped")
+
+
+def get_argparser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Manage Virtual Machines")
+    subparsers = parser.add_subparsers(dest="command", required=True, help="Commands")
+
+    # Create subcommand
+    create_parser = subparsers.add_parser("create", help="Create a virtual machine")
+    create_parser.add_argument("name", help="Name of the virtual machine")
+    create_parser.add_argument(
+        "image_file", help="Path to the Image file (.iso or .img)"
+    )
+    create_parser.add_argument(
+        "--cpus", type=int, default=2, help="Number of CPUs (default: 2)"
+    )
+    create_parser.add_argument(
+        "--memory", type=int, default=2000, help="Memory in MB (default: 2000)"
+    )
+    create_parser.add_argument(
+        "--disk", type=int, default=30000, help="Disk size in MB (default: 30000)"
+    )
+    create_parser.add_argument(
+        "--network", default="nat", help="Network type (default: nat)"
+    )
+
+    list_parser = subparsers.add_parser("list", help="List virtual machines")
+
+    # Start subcommand
+    start_parser = subparsers.add_parser("start", help="Start a virtual machine")
+    start_parser.add_argument("name", help="Name of the virtual machine")
+
+    # Stop subcommand
+    stop_parser = subparsers.add_parser("stop", help="Stop a virtual machine")
+    stop_parser.add_argument("name", help="Name of the virtual machine")
+
+    # Shutdown subcommand
+    shutdown_parser = subparsers.add_parser(
+        "shutdown", help="Shutdown a virtual machine"
+    )
+    shutdown_parser.add_argument("name", help="Name of the virtual machine")
+
+    # Destroy subcommand
+    destroy_parser = subparsers.add_parser("destroy", help="Destroy a virtual machine")
+    destroy_parser.add_argument("name", help="Name of the virtual machine")
+
+    return parser
+
+
+# Main function to process commands
+def main() -> None:
+    parser = get_argparser()
+    args = parser.parse_args()
+
+    if args.command == "create":
+        print(f"Creating VM '{args.name}' with Image '{args.image_file}'...")
+        # Create the VM using the provided arguments
+        vm = VirtualMachine(
+            name=args.name,
+            image_file=args.image_file,
+            memory=args.memory,
+            cpu=args.cpus,
+            disk_size=args.disk,
+            network=args.network,
+        )
+        vm.create()
+
+    elif args.command == "list":
+        print(f"Listing VMs...")
+        # Start the VM using the provided name
+        vm = VirtualMachine(name="Dummy", image_file="dummy.iso")
+        vm.list()
+
+    elif args.command == "start":
+        print(f"Starting VM '{args.name}'...")
+        # Start the VM using the provided name
+        vm = VirtualMachine(name=args.name, image_file="dummy.iso")
+        vm.start()
+
+    elif args.command == "stop":
+        print(f"Stopping VM '{args.name}'...")
+        # Stop the VM using the provided name
+        vm = VirtualMachine(name=args.name, image_file="dummy.iso")
+        vm.stop()
+
+    elif args.command == "shutdown":
+        print(f"Shutting down VM '{args.name}'...")
+        # Shutdown the VM using the provided name
+        vm = VirtualMachine(name=args.name, image_file="dummy.iso")
+        vm.shutdown()
+
+    elif args.command == "destroy":
+        print(f"Destroying VM '{args.name}'...")
+        # Destroy the VM using the provided name
+        vm = VirtualMachine(name=args.name, image_file="dummy.iso")
+        vm.destroy()
+
+
+if __name__ == "__main__":
+    main()
