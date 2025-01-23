@@ -70,6 +70,7 @@ cd devutils
 | `stop` | Stop a running virtual machine | `./vm_manager stop my-vm` |
 | `shutdown`| Shutdown a running virtual machine | `./vm_manager shutdown my-vm` |
 | `destroy` | Destroy a virtual machine | `./vm_manager destroy my-vm` |
+| `list` | List virtual machines and current status | `./vm_manager list` |
 
 ---
 

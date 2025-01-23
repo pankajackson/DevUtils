@@ -20,7 +20,7 @@ class VirtualMachine:
     def __init__(
         self,
         name: str,
-        image_file: str | None = None,
+        image_file: str,
         memory: int | None = 2000,
         cpu: int | None = 2,
         disk_size: int | None = 30000,
@@ -135,6 +135,17 @@ class VirtualMachine:
     def destroy(self) -> None:
         self.run_cmd_set(self.cmds["destroy_vm"])
 
+    def list(self) -> None:
+        status = {}
+        all_vms = self.run_cmd("VBoxManage list vms").splitlines()
+        running_vms = self.run_cmd("VBoxManage list runningvms").splitlines()
+        status["running"] = running_vms
+        status["stopped"] = [vm for vm in all_vms if vm not in running_vms]
+        for vm in status["running"]:
+            print(vm.split('"')[1], "(Running)")
+        for vm in status["stopped"]:
+            print(vm.split('"')[1], "(Stopped)")
+
 
 def get_argparser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Manage Virtual Machines")
@@ -158,6 +169,8 @@ def get_argparser() -> argparse.ArgumentParser:
     create_parser.add_argument(
         "--network", default="nat", help="Network type (default: nat)"
     )
+
+    list_parser = subparsers.add_parser("list", help="List virtual machines")
 
     # Start subcommand
     start_parser = subparsers.add_parser("start", help="Start a virtual machine")
@@ -198,28 +211,34 @@ def main() -> None:
         )
         vm.create()
 
+    elif args.command == "list":
+        print(f"Listing VMs...")
+        # Start the VM using the provided name
+        vm = VirtualMachine(name="Dummy", image_file="dummy.iso")
+        vm.list()
+
     elif args.command == "start":
         print(f"Starting VM '{args.name}'...")
         # Start the VM using the provided name
-        vm = VirtualMachine(name=args.name)
+        vm = VirtualMachine(name=args.name, image_file="dummy.iso")
         vm.start()
 
     elif args.command == "stop":
         print(f"Stopping VM '{args.name}'...")
         # Stop the VM using the provided name
-        vm = VirtualMachine(name=args.name)
+        vm = VirtualMachine(name=args.name, image_file="dummy.iso")
         vm.stop()
 
     elif args.command == "shutdown":
         print(f"Shutting down VM '{args.name}'...")
         # Shutdown the VM using the provided name
-        vm = VirtualMachine(name=args.name)
+        vm = VirtualMachine(name=args.name, image_file="dummy.iso")
         vm.shutdown()
 
     elif args.command == "destroy":
         print(f"Destroying VM '{args.name}'...")
         # Destroy the VM using the provided name
-        vm = VirtualMachine(name=args.name)
+        vm = VirtualMachine(name=args.name, image_file="dummy.iso")
         vm.destroy()
 
 
