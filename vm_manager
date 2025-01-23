@@ -136,15 +136,10 @@ class VirtualMachine:
         self.run_cmd_set(self.cmds["destroy_vm"])
 
     def list(self) -> None:
-        status = {}
         all_vms = self.run_cmd("VBoxManage list vms").splitlines()
         running_vms = self.run_cmd("VBoxManage list runningvms").splitlines()
-        status["running"] = running_vms
-        status["stopped"] = [vm for vm in all_vms if vm not in running_vms]
-        for vm in status["running"]:
-            print(vm.split('"')[1], "(Running)")
-        for vm in status["stopped"]:
-            print(vm.split('"')[1], "(Stopped)")
+        for vm in all_vms:
+            print(vm.split('"')[1], "Running" if vm in running_vms else "Stopped")
 
 
 def get_argparser() -> argparse.ArgumentParser:
