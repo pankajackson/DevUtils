@@ -9,6 +9,7 @@
   - [Getting Started](#getting-started)
   - [Available Utilities](#available-utilities)
     - [1. Virtual Machine Manager](#1-virtual-machine-manager)
+    - [2. Camera Device Manager](#2-camera-device-manager)
   - [Adding New Utilities](#adding-new-utilities)
   - [Contributing](#contributing)
   - [License](#license)
@@ -71,6 +72,46 @@ cd devutils
 | `shutdown`| Shutdown a running virtual machine | `./vm_manager shutdown my-vm` |
 | `destroy` | Destroy a virtual machine | `./vm_manager destroy my-vm` |
 | `list` | List virtual machines and current status | `./vm_manager list` |
+
+---
+
+### 2. Camera Device Manager
+
+**Description**:  
+This Bash script helps manage camera devices connected to your system. It allows you to check the status of devices, turn them on or off, and check device permissions.
+
+**Features**:
+
+- Validate whether the specified device is a valid camera device.
+- Change device permissions to turn it on or off.
+- View detailed information about the device's status, including ownership and permissions.
+
+**Dependencies**:
+
+- `v4l2-ctl` (part of the `v4l-utils` package).
+- `udevadm` (for device information).
+
+**Usage**:
+
+1. Navigate to the script directory:
+
+```bash
+cd devutils
+```
+
+2. Run the script with one of the following commands:
+
+```bash
+./cam_manager [action] [device] [--detail]
+```
+
+**Commands**:
+| Command | Description | Example |
+|----------|-------------------------------------------|----------------------------------------------------|
+| `setup` | Install required dependencies | `./cam_manager setup` |
+| `on` | Turn the specified device on | `./cam_manager on /dev/video0` |
+| `off` | Turn the specified device off | `./cam_manager off /dev/video0` |
+| `status` | Check the status of a specific device | `./cam_manager status /dev/video0` |
 
 ---
 
