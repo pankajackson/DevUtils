@@ -26,10 +26,24 @@ get_device_name() {
 # Function to list real camera devices
 get_camera_devices() {
     for dev in /dev/video*; do
-        if sudo v4l2-ctl -d "$dev" --list-formats-ext 2>/dev/null | grep -q "Size:"; then
+        if v4l2-ctl -d "$dev" --list-formats-ext 2>/dev/null | grep -q "Size:"; then
             echo "$dev"
         fi
     done
+}
+
+# Function to check if device is a valid camera device
+validate_device() {
+    local device=$1
+    if [[ ! -e "$device" ]]; then
+        echo "Error: Device $device not found!"
+        exit 1
+    fi
+
+    if ! v4l2-ctl -d "$device" --list-formats-ext &>/dev/null; then
+        echo "Error: Device $device is not a valid camera device."
+        exit 1
+    fi
 }
 
 # Function to check the status of a single device
@@ -68,13 +82,13 @@ setup_environment() {
 
     # Detect the package manager
     if command -v apt >/dev/null 2>&1; then
-        PACKAGE_MANAGER="sudo apt"
+        PACKAGE_MANAGER="apt"
         INSTALL_CMD="$PACKAGE_MANAGER install -y"
     elif command -v pacman >/dev/null 2>&1; then
-        PACKAGE_MANAGER="sudo pacman"
+        PACKAGE_MANAGER="pacman"
         INSTALL_CMD="$PACKAGE_MANAGER -S --noconfirm --needed"
     elif command -v dnf >/dev/null 2>&1; then
-        PACKAGE_MANAGER="sudo dnf"
+        PACKAGE_MANAGER="dnf"
         INSTALL_CMD="$PACKAGE_MANAGER install -y"
     else
         echo "Error: Unsupported package manager. Install 'v4l2-ctl' manually."
@@ -96,10 +110,9 @@ setup_environment() {
     fi
 }
 
-# Check if device exists
-if [[ -n "$DEVICE" && ! -e "$DEVICE" ]]; then
-    echo "Device $DEVICE not found!"
-    exit 1
+# Check if device exists and is valid
+if [[ -n "$DEVICE" ]]; then
+    validate_device "$DEVICE"
 fi
 
 case $ACTION in
@@ -108,7 +121,7 @@ setup)
     ;;
 on)
     if [[ -n "$DEVICE" ]]; then
-        sudo chmod 660 "$DEVICE" 2>/dev/null
+        chmod 660 "$DEVICE" 2>/dev/null
         if [[ $? -eq 0 ]]; then
             name=$(get_device_name "$DEVICE")
             echo "Camera device $name ($DEVICE) turned ON."
@@ -117,7 +130,7 @@ on)
         fi
     else
         for dev in $(get_camera_devices); do
-            sudo chmod 660 "$dev" 2>/dev/null
+            chmod 660 "$dev" 2>/dev/null
             if [[ $? -eq 0 ]]; then
                 name=$(get_device_name "$dev")
                 echo "Camera device $name ($dev) turned ON."
@@ -129,7 +142,7 @@ on)
     ;;
 off)
     if [[ -n "$DEVICE" ]]; then
-        sudo chmod 000 "$DEVICE" 2>/dev/null
+        chmod 000 "$DEVICE" 2>/dev/null
         if [[ $? -eq 0 ]]; then
             name=$(get_device_name "$DEVICE")
             echo "Camera device $name ($DEVICE) turned OFF."
@@ -138,7 +151,7 @@ off)
         fi
     else
         for dev in $(get_camera_devices); do
-            sudo chmod 000 "$dev" 2>/dev/null
+            chmod 000 "$dev" 2>/dev/null
             if [[ $? -eq 0 ]]; then
                 name=$(get_device_name "$dev")
                 echo "Camera device $name ($dev) turned OFF."
