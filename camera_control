@@ -47,6 +47,40 @@ check_device_status() {
     fi
 }
 
+# Function to install required software
+setup_environment() {
+    echo "Setting up the environment..."
+
+    # Detect the package manager
+    if command -v apt >/dev/null 2>&1; then
+        PACKAGE_MANAGER="sudo apt"
+        INSTALL_CMD="$PACKAGE_MANAGER install -y"
+    elif command -v pacman >/dev/null 2>&1; then
+        PACKAGE_MANAGER="sudo pacman"
+        INSTALL_CMD="$PACKAGE_MANAGER -S --noconfirm --needed"
+    elif command -v dnf >/dev/null 2>&1; then
+        PACKAGE_MANAGER="sudo dnf"
+        INSTALL_CMD="$PACKAGE_MANAGER install -y"
+    else
+        echo "Error: Unsupported package manager. Install 'v4l2-ctl' manually."
+        exit 1
+    fi
+
+    echo "Using package manager: $PACKAGE_MANAGER"
+
+    # Install required tools
+    echo "Installing required software..."
+    $INSTALL_CMD v4l-utils
+
+    # Verify installation
+    if command -v v4l2-ctl >/dev/null 2>&1; then
+        echo "Setup complete. All required software is installed."
+    else
+        echo "Error: Failed to install required software. Please check your package manager or install manually."
+        exit 1
+    fi
+}
+
 # Check if device exists
 if [[ -n "$DEVICE" && ! -e "$DEVICE" ]]; then
     echo "Device $DEVICE not found!"
@@ -54,6 +88,9 @@ if [[ -n "$DEVICE" && ! -e "$DEVICE" ]]; then
 fi
 
 case $ACTION in
+setup)
+    setup_environment
+    ;;
 on)
     if [[ -n "$DEVICE" ]]; then
         sudo chmod 660 "$DEVICE" 2>/dev/null
@@ -104,7 +141,7 @@ status)
     fi
     ;;
 *)
-    echo "Usage: $0 {on|off|status} [device] [--detail]"
+    echo "Usage: $0 {setup|on|off|status} [device] [--detail]"
     exit 1
     ;;
 esac
