@@ -1,5 +1,37 @@
 #!/bin/bash
 
+# ==============================================================================
+# Script Name: cam_manager
+# Description: This script manages camera devices (on/off, status, setup).
+#              It allows turning on/off camera devices, checking their status,
+#              and installing necessary dependencies.
+# Author: Pankaj Jackson
+# Version: 1.0.0
+# Date: 2025-01-25
+# License: MIT License
+# ==============================================================================
+#
+# Usage:
+#   ./cam_manager {setup|on|off|status} [device] [--detail]
+#
+# Arguments:
+#   setup      - Install required dependencies (e.g., v4l2-utils).
+#   on         - Turn on the specified camera device or all available devices.
+#   off        - Turn off the specified camera device or all available devices.
+#   status     - Check the status of the specified camera device or all devices.
+#   [device]   - The device path (e.g., /dev/video0). If omitted, all camera devices are affected.
+#   --detail   - Optional flag to show detailed information about the device (permissions, owner, group).
+#
+# Dependencies:
+#   - v4l2-ctl (part of the v4l-utils package) for interacting with camera devices.
+#   - A package manager (apt, pacman, dnf) to install the necessary tools.
+#
+# Notes:
+#   - The script will validate if the device is a valid camera device.
+#   - It assumes that the camera devices are listed as /dev/video*.
+#
+# ==============================================================================
+
 ACTION="$1"
 DEVICE="$2"
 DETAILS=false
