@@ -1,0 +1,110 @@
+#!/bin/bash
+
+ACTION="$1"
+DEVICE="$2"
+DETAILS=false
+
+if [[ "$3" == "--detail" ]]; then
+    DETAILS=true
+fi
+
+# Function to list real camera devices
+get_camera_devices() {
+    for dev in /dev/video*; do
+        if sudo v4l2-ctl -d "$dev" --list-formats-ext 2>/dev/null | grep -q "Size:"; then
+            echo "$dev"
+        fi
+    done
+}
+
+# Function to check the status of a single device
+check_device_status() {
+    local device=$1
+
+    # If permissions are so restricted that we can't even stat the device, assume OFF
+    if [[ ! -r "$device" && ! -w "$device" && ! -x "$device" ]]; then
+        echo "OFF"
+        return
+    fi
+
+    local permissions=$(stat -c '%A' "$device" 2>/dev/null)
+    if [[ "$permissions" =~ [rwx] ]]; then
+        echo -n "ON"
+        if $DETAILS; then
+            local owner=$(stat -c '%U' "$device")
+            local group=$(stat -c '%G' "$device")
+            echo " (Permissions: $permissions, Owner: $owner, Group: $group)"
+        else
+            echo
+        fi
+    else
+        echo -n "OFF"
+        if $DETAILS; then
+            echo " (Permissions: $permissions)"
+        else
+            echo
+        fi
+    fi
+}
+
+# Check if device exists
+if [[ -n "$DEVICE" && ! -e "$DEVICE" ]]; then
+    echo "Device $DEVICE not found!"
+    exit 1
+fi
+
+case $ACTION in
+on)
+    if [[ -n "$DEVICE" ]]; then
+        sudo chmod 660 "$DEVICE" 2>/dev/null
+        if [[ $? -eq 0 ]]; then
+            echo "Camera device $DEVICE turned ON."
+        else
+            echo "Failed to turn ON $DEVICE. Check permissions."
+        fi
+    else
+        for dev in $(get_camera_devices); do
+            sudo chmod 660 "$dev" 2>/dev/null
+            if [[ $? -eq 0 ]]; then
+                echo "Camera device $dev turned ON."
+            else
+                echo "Failed to turn ON $dev. Check permissions."
+            fi
+        done
+    fi
+    ;;
+off)
+    if [[ -n "$DEVICE" ]]; then
+        sudo chmod 000 "$DEVICE" 2>/dev/null
+        if [[ $? -eq 0 ]]; then
+            echo "Camera device $DEVICE turned OFF."
+        else
+            echo "Failed to turn OFF $DEVICE. Check permissions."
+        fi
+    else
+        for dev in $(get_camera_devices); do
+            sudo chmod 000 "$dev" 2>/dev/null
+            if [[ $? -eq 0 ]]; then
+                echo "Camera device $dev turned OFF."
+            else
+                echo "Failed to turn OFF $dev. Check permissions."
+            fi
+        done
+    fi
+    ;;
+status)
+    if [[ -n "$DEVICE" ]]; then
+        echo -n "Device $DEVICE: "
+        check_device_status "$DEVICE"
+    else
+        for dev in $(get_camera_devices); do
+            echo -n "Device $dev: "
+            check_device_status "$dev"
+        done
+    fi
+    ;;
+*)
+    echo "Usage: $0 {on|off|status} [device] [--detail]"
+    exit 1
+    ;;
+esac
