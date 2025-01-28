@@ -9,11 +9,34 @@ import json
 import logging
 import gc
 import argparse
+import shutil
 
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def check_tools_installed():
+    """
+    Check if required tools (git, gh) are installed.
+    """
+    required_tools = {
+        "git": "Git is required for repository operations. Install it from https://git-scm.com/.",
+        "gh": "GitHub CLI (gh) is required for creating repositories. Install it from https://cli.github.com/.",
+    }
+
+    missing_tools = []
+    for tool, message in required_tools.items():
+        if not shutil.which(tool):
+            missing_tools.append((tool, message))
+
+    if missing_tools:
+        logger.error("The following tools are missing:")
+        for tool, message in missing_tools:
+            logger.error(f"- {tool}: {message}")
+        return False
+    return True
 
 
 def is_valid_repo_name(repo_name):
@@ -130,6 +153,9 @@ def arg_parser():
 def main():
     parser = arg_parser()
     args = parser.parse_args()
+
+    if not check_tools_installed():
+        return
 
     if not is_valid_url(args.source_repo_url):
         logger.error("Invalid source repository URL.")
