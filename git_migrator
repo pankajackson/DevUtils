@@ -49,6 +49,24 @@ def is_valid_url(url):
     return bool(re.match(r"^(https?://|git@[\w.-]+:[\w./-]+\.git$)", url))
 
 
+def parse_repo_url(url):
+    """Extract repository name and user name from URL for GitHub, GitLab, Bitbucket, and other git hosting services."""
+    match = re.match(
+        r"^(https?://(?:github|gitlab|bitbucket)\.com/|git@(?:github|gitlab|bitbucket)\.org:)([\w-]+)/([\w-]+)(\.git)?$",
+        url,
+    )
+    if match:
+        platform = match.group(1).split(".")[
+            1
+        ]  # Extract platform (github, gitlab, bitbucket)
+        user_name = match.group(2)
+        repo_name = match.group(3)
+        return platform, user_name, repo_name
+    else:
+        logger.error(f"Invalid Git repository URL: {url}")
+        return None, None, None
+
+
 def create_github_repo(repo_name, token, is_private=True):
     """
     Create a GitHub repository using the GitHub API.
@@ -165,6 +183,8 @@ def main():
         logger.error("Invalid target repository URL.")
         return
 
+    # Use the source repo URL to fetch default repo name and user name
+    src_platform, src_user_name, src_repo_name = parse_repo_url(args.source_repo_url)
     if not args.target_repo_url:
         github_token = getpass.getpass(
             "Enter your GitHub personal access token: "
@@ -173,6 +193,8 @@ def main():
             args.repo_name
             or input("Enter the name for the new target repository: ").strip()
         )
+        # If target repo name is not provided, use the extracted repo name
+        repo_name = args.repo_name or repo_name or src_repo_name
 
         if not is_valid_repo_name(repo_name):
             logger.error(
