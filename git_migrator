@@ -52,10 +52,13 @@ def is_valid_url(url):
 def parse_repo_url(url):
     """
     Extract repository platform, user name, and repository name from a Git URL.
-    Supports SSH and HTTP/HTTPS URLs for any hostname.
+    Supports SSH, HTTP/HTTPS, and custom formats like git@ or https://user@domain.
     """
+    # Regex to match Git URLs
     match = re.match(
-        r"^(?:git@|https?://)([\w.-]+)(?::|/)([\w.-]+)/([\w.-]+)(?:\.git)?$", url
+        r"^(?:(?:git@|https?:\/\/)(?:[\w.-]+@)?([\w.-]+)(?::|\/))"
+        r"([\w.-]+)\/([\w.-]+?)(?:\.git)?$",
+        url,
     )
     if match:
         platform = match.group(
