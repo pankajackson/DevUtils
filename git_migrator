@@ -126,19 +126,27 @@ def create_target_repo(repo_name, platform, is_private):
     Create a repository on the target platform.
     """
     if platform == "github":
-        # Use GitHub API or CLI to create the repository
         github_token = getpass.getpass(
             "Enter your GitHub personal access token: "
         ).strip()
-        target_repo_url = create_github_repo(repo_name, github_token, is_private)
-        if not target_repo_url:
-            logger.error("Failed to create GitHub repository.")
-            return None
-        return target_repo_url
+        if github_token == "":
+            logger.info("Creating a repository using gh cli")
+            target_repo_url = create_github_repo_with_cli(repo_name)
+            if not target_repo_url:
+                logger.error("Failed to create GitHub repository.")
+                return None
+            return target_repo_url
+        else:
+            # Create a GitHub repository using the GitHub API.
+            target_repo_url = create_github_repo(repo_name, github_token, is_private)
+            if not target_repo_url:
+                logger.error("Failed to create GitHub repository.")
+                return None
+            return target_repo_url
     elif platform == "bitbucket":
         # For Bitbucket, you can skip creation or implement Bitbucket API
-        logger.info(
-            f"Skipping repository creation for Bitbucket. Using provided target URL."
+        logger.error(
+            f"Create a repository on the target platform {platform} is not supported."
         )
         return f"git@bitbucket.org:{repo_name}.git"
     else:
@@ -190,6 +198,11 @@ def arg_parser():
     parser.add_argument(
         "--private", action="store_true", help="Make the repository private"
     )
+    parser.add_argument(
+        "--target-platform",
+        choices=["github", "bitbucket"],
+        help="Target platform for repository creation (default: github)",
+    )
     return parser
 
 
@@ -226,11 +239,30 @@ def main():
             )
             return
 
-        is_private = args.private or input(
-            "Should the repository be private? (yes/no): "
-        ).strip().lower() in ["yes", "y"]
+        is_private = args.private
+        if not is_private:
+            is_private_input = (
+                input("Should the repository be private? (yes/no) (default: yes): ")
+                .strip()
+                .lower()
+            )
 
-        target_repo_url = create_target_repo(repo_name, src_platform, is_private)
+            is_public = is_private_input in ["no", "n"]
+            is_private = (
+                is_private_input in ["yes", "y"] or is_private_input == "" or True
+            ) and not is_public
+
+        target_platform = (
+            args.target_platform
+            or input(f"Enter the target platform (default: github): ").strip().lower()
+            or "github"
+        )
+
+        if target_platform not in ["github", "bitbucket"]:
+            logger.warning(f"Unsupported platform {target_platform}. Exiting.")
+            return
+
+        target_repo_url = create_target_repo(repo_name, target_platform, is_private)
         if not target_repo_url:
             logger.error("Failed to create target repository. Exiting.")
             return
