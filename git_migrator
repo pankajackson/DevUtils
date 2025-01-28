@@ -1,5 +1,16 @@
 #!/usr/bin/env python3
 
+"""
+Script: Repository Migration Tool
+Author: Pankaj Jackson
+Email: pankajackson@live.co.uk
+Description: A Python script helps in migrating a Git repository from one 
+            location to another while supporting repository creation on platforms 
+            like GitHub. It simplifies cloning, pushing, and managing repositories 
+            across different remotes.
+License: MIT License
+"""
+
 import os
 import subprocess
 import requests
