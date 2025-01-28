@@ -121,6 +121,31 @@ def create_github_repo_with_cli(repo_name, is_private=True):
         return None
 
 
+def create_target_repo(repo_name, platform, is_private):
+    """
+    Create a repository on the target platform.
+    """
+    if platform == "github":
+        # Use GitHub API or CLI to create the repository
+        github_token = getpass.getpass(
+            "Enter your GitHub personal access token: "
+        ).strip()
+        target_repo_url = create_github_repo(repo_name, github_token, is_private)
+        if not target_repo_url:
+            logger.error("Failed to create GitHub repository.")
+            return None
+        return target_repo_url
+    elif platform == "bitbucket":
+        # For Bitbucket, you can skip creation or implement Bitbucket API
+        logger.info(
+            f"Skipping repository creation for Bitbucket. Using provided target URL."
+        )
+        return f"git@bitbucket.org:{repo_name}.git"
+    else:
+        logger.error("Unsupported platform for repository creation.")
+        return None
+
+
 def migrate_repo(source_repo_url, target_repo_url):
     """
     Migrate a repository from the source to the target.
@@ -186,12 +211,11 @@ def main():
     # Use the source repo URL to fetch default repo name and user name
     src_platform, src_user_name, src_repo_name = parse_repo_url(args.source_repo_url)
     if not args.target_repo_url:
-        github_token = getpass.getpass(
-            "Enter your GitHub personal access token: "
-        ).strip()
         repo_name = (
             args.repo_name
-            or input("Enter the name for the new target repository: ").strip()
+            or input(
+                f"Enter the name for the new target repository [{src_repo_name}]: "
+            ).strip()
         )
         # If target repo name is not provided, use the extracted repo name
         repo_name = args.repo_name or repo_name or src_repo_name
@@ -206,11 +230,7 @@ def main():
             "Should the repository be private? (yes/no): "
         ).strip().lower() in ["yes", "y"]
 
-        target_repo_url = (
-            create_github_repo(repo_name, github_token, is_private)
-            if github_token
-            else create_github_repo_with_cli(repo_name, is_private)
-        )
+        target_repo_url = create_target_repo(repo_name, src_platform, is_private)
         if not target_repo_url:
             logger.error("Failed to create target repository. Exiting.")
             return
