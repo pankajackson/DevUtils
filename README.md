@@ -10,6 +10,7 @@
   - [Available Utilities](#available-utilities)
     - [1. Virtual Machine Manager](#1-virtual-machine-manager)
     - [2. Camera Device Manager](#2-camera-device-manager)
+    - [3. Repository Migration Tool](#3-repository-migration-tool)
   - [Adding New Utilities](#adding-new-utilities)
   - [Contributing](#contributing)
   - [License](#license)
@@ -112,6 +113,70 @@ cd devutils
 | `on` | Turn the specified device on | `./cam_manager on /dev/video0` |
 | `off` | Turn the specified device off | `./cam_manager off /dev/video0` |
 | `status` | Check the status of a specific device | `./cam_manager status /dev/video0` |
+
+---
+
+### 3. Repository Migration Tool
+
+This tool helps in migrating a Git repository from one location to another while supporting repository creation on platforms like GitHub. It simplifies cloning, pushing, and managing repositories across different remotes.
+
+**Features**
+
+- Validate repository URLs and names.
+- Automatically create new repositories on GitHub using the GitHub API or GitHub CLI (`gh`).
+- Migrate repositories, including all branches, between remotes.
+- Supports SSH and HTTPS protocols for repository URLs.
+- Customizable repository privacy settings (public/private).
+- Provides detailed error messages and logs for easy debugging.
+
+**Dependencies**
+
+- [Git](https://git-scm.com/)
+- [GitHub CLI (gh)](https://cli.github.com/)
+
+**Usage**
+
+Run the script with the required arguments:
+
+```bash
+./git_migrator <source_repo_url> [options]
+```
+
+**Arguments**
+
+- `source_repo_url`: URL of the source Git repository to migrate.
+
+**Options**
+
+- `--target-repo-url`: URL of the target repository. If not provided, a new repository will be created.
+- `--repo-name`: Name of the new target repository (used if creating a repository).
+- `--private`: Makes the new repository private (default: `private`).
+- `--target-platform`: Target platform for repository creation (e.g., `github` or `bitbucket`). Default is `github`.
+- `--target-proto`: Protocol for pushing to the repository (`ssh` or `https`). Default is `ssh`.
+
+**Examples**
+
+1. **Migrate a repository with automatic target creation**:
+
+```bash
+./git_migrator https://github.com/user/source-repo.git --repo-name new-repo --private
+```
+
+2. **Migrate to an existing target repository**:
+
+```bash
+./git_migrator https://github.com/user/source-repo.git --target-repo-url git@github.com:user/new-repo.git
+```
+
+3. **Use HTTPS instead of SSH for migration**:
+
+```bash
+./git_migrator https://github.com/user/source-repo.git --target-proto https
+```
+
+**Logs**
+
+The script provides detailed logging output for each step. Logs can help identify missing tools, invalid inputs, or migration issues.
 
 ---
 
