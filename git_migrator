@@ -46,7 +46,7 @@ def is_valid_repo_name(repo_name):
 
 def is_valid_url(url):
     """Validate URL format."""
-    return bool(re.match(r"^https?://", url))
+    return bool(re.match(r"^(https?://|git@[\w.-]+:[\w./-]+\.git$)", url))
 
 
 def create_github_repo(repo_name, token, is_private=True):
