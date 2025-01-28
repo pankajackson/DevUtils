@@ -17,7 +17,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def check_tools_installed():
+def check_tools_installed() -> bool:
     """
     Check if required tools (git, gh) are installed.
     """
@@ -39,17 +39,17 @@ def check_tools_installed():
     return True
 
 
-def is_valid_repo_name(repo_name):
+def is_valid_repo_name(repo_name: str) -> bool:
     """Validate repository name."""
     return bool(re.match(r"^[a-zA-Z0-9_.-]+$", repo_name))
 
 
-def is_valid_url(url):
+def is_valid_url(url: str) -> bool:
     """Validate URL format."""
     return bool(re.match(r"^(https?://|git@[\w.-]+:[\w./-]+\.git$)", url))
 
 
-def parse_repo_url(url):
+def parse_repo_url(url: str) -> tuple[str, str, str] | tuple[None, None, None]:
     """
     Extract repository platform, user name, and repository name from a Git URL.
     Supports SSH, HTTP/HTTPS, and custom formats like git@ or https://user@domain.
@@ -72,7 +72,9 @@ def parse_repo_url(url):
         return None, None, None
 
 
-def create_github_repo(repo_name, token, is_private=True):
+def create_github_repo(
+    repo_name: str, token: str, is_private: bool = True
+) -> dict[str, str] | None:
     """
     Create a GitHub repository using the GitHub API.
     """
@@ -103,7 +105,9 @@ def create_github_repo(repo_name, token, is_private=True):
         return None
 
 
-def create_github_repo_with_cli(repo_name, is_private=True):
+def create_github_repo_with_cli(
+    repo_name: str, is_private: bool = True
+) -> dict[str, str] | None:
     """
     Create a GitHub repository using the GitHub CLI (gh).
     """
@@ -122,7 +126,7 @@ def create_github_repo_with_cli(repo_name, is_private=True):
             ["gh", "api", "user"], capture_output=True, text=True, check=True
         )
         user_data = json.loads(result.stdout)
-        username = user_data.get("login")
+        username: str = user_data.get("login")
         return {
             "owner": username,
             "name": repo_name,
@@ -132,7 +136,9 @@ def create_github_repo_with_cli(repo_name, is_private=True):
         return None
 
 
-def create_target_repo(repo_name, platform, proto, is_private):
+def create_target_repo(
+    repo_name: str, platform: str, proto: str, is_private: bool
+) -> str | None:
     """
     Create a repository on the target platform.
     """
@@ -182,13 +188,13 @@ def create_target_repo(repo_name, platform, proto, is_private):
         logger.error(
             f"Create a repository on the target platform {platform} is not supported."
         )
-        return f"git@bitbucket.org:{repo_name}.git"
+        return None
     else:
         logger.error("Unsupported platform for repository creation.")
         return None
 
 
-def migrate_repo(source_repo_url, target_repo_url):
+def migrate_repo(source_repo_url: str, target_repo_url: str) -> None:
     """
     Migrate a repository from the source to the target.
     """
@@ -224,7 +230,7 @@ def migrate_repo(source_repo_url, target_repo_url):
             subprocess.run(["rm", "-rf", temp_dir])
 
 
-def arg_parser():
+def arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Repository Migration Tool")
     parser.add_argument("source_repo_url", help="Source repository URL")
     parser.add_argument("--target-repo-url", help="Target repository URL", default="")
@@ -245,7 +251,7 @@ def arg_parser():
     return parser
 
 
-def main():
+def main() -> None:
     parser = arg_parser()
     args = parser.parse_args()
 
@@ -272,7 +278,7 @@ def main():
         # If target repo name is not provided, use the extracted repo name
         repo_name = args.repo_name or repo_name or src_repo_name
 
-        if not is_valid_repo_name(repo_name):
+        if not is_valid_repo_name(repo_name or ""):
             logger.error(
                 "Invalid repository name. Only alphanumeric characters, '.', '_', and '-' are allowed."
             )
@@ -312,15 +318,17 @@ def main():
         if target_proto not in ["ssh", "https"]:
             logger.warning(f"Unsupported proto {target_proto}. Exiting.")
             return
-
-        target_repo_url = create_target_repo(
-            repo_name,
-            target_platform,
-            target_proto,
-            is_private,
-        )
-        if not target_repo_url:
-            logger.error("Failed to create target repository. Exiting.")
+        if repo_name:
+            target_repo_url = create_target_repo(
+                repo_name,
+                target_platform,
+                target_proto,
+                is_private,
+            )
+            if not target_repo_url:
+                logger.error("Failed to create target repository. Exiting.")
+                return
+        else:
             return
     else:
         target_repo_url = args.target_repo_url
