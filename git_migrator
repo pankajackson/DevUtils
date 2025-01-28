@@ -50,17 +50,19 @@ def is_valid_url(url):
 
 
 def parse_repo_url(url):
-    """Extract repository name and user name from URL for GitHub, GitLab, Bitbucket, and other git hosting services."""
+    """
+    Extract repository platform, user name, and repository name from a Git URL.
+    Supports SSH and HTTP/HTTPS URLs for any hostname.
+    """
     match = re.match(
-        r"^(https?://(?:github|gitlab|bitbucket)\.com/|git@(?:github|gitlab|bitbucket)\.org:)([\w-]+)/([\w-]+)(\.git)?$",
-        url,
+        r"^(?:git@|https?://)([\w.-]+)(?::|/)([\w.-]+)/([\w.-]+)(?:\.git)?$", url
     )
     if match:
-        platform = match.group(1).split(".")[
+        platform = match.group(
             1
-        ]  # Extract platform (github, gitlab, bitbucket)
-        user_name = match.group(2)
-        repo_name = match.group(3)
+        )  # Extract hostname (e.g., bitbucket.org, github.com, or custom domains)
+        user_name = match.group(2)  # Extract username or group
+        repo_name = match.group(3)  # Extract repository name
         return platform, user_name, repo_name
     else:
         logger.error(f"Invalid Git repository URL: {url}")
