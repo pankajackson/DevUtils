@@ -73,7 +73,7 @@ class Locker:
             exit(2)
 
     def tar(self):
-        subprocess.run(
+        tar_process = subprocess.run(
             [
                 "tar",
                 "-cf",
@@ -81,26 +81,41 @@ class Locker:
                 "-C",
                 self.path.parent,
                 self.path.name,
-            ]
+            ],
+            check=True,
         )
+        if tar_process.returncode != 0:
+            logger.error(
+                f"Failed to untar {self.path.name}.\n" f"Error: {tar_process.stderr}"
+            )
+            exit(1)
 
     def untar(self):
-        subprocess.run(
+        untar_process = subprocess.run(
             [
                 "tar",
                 "-xf",
                 self.tar_path,
                 "-C",
                 self.path.parent,
-            ]
+            ],
+            check=True,
         )
+        if untar_process.returncode != 0:
+            logger.error(
+                f"Failed to untar {self.tar_path}.\n" f"Error: {untar_process.stderr}"
+            )
+            exit(1)
 
     def encrypt(self, password):
-        subprocess.run(
+        enc_process = subprocess.run(
             [
                 "openssl",
                 "enc",
                 "-aes-256-cbc",
+                "-pbkdf2",
+                "-iter",
+                "100000",
                 "-salt",
                 "-in",
                 self.tar_path,
@@ -108,24 +123,37 @@ class Locker:
                 self.encrypted_tar_path,
                 "-k",
                 password,
-            ]
+            ],
+            check=True,
         )
+        if enc_process.returncode != 0:
+            logger.error(
+                f"Failed to encrypt {self.tar_path}.\n" f"Error: {enc_process.stderr}"
+            )
+            exit(1)
 
     def decrypt(self, password):
-        subprocess.run(
+        desc_process = subprocess.run(
             [
                 "openssl",
                 "enc",
                 "-d",
                 "-aes-256-cbc",
+                "-pbkdf2",
+                "-iter",
+                "100000",
                 "-in",
                 self.encrypted_tar_path,
                 "-out",
                 self.tar_path,
                 "-k",
                 password,
-            ]
+            ],
+            check=True,
         )
+        if desc_process.returncode != 0:
+            logger.error("Failed to decrypt file.\n" f"Error: {desc_process.stderr}")
+            exit(1)
 
     def lock(self):
         auth_data = self.authenticate()
@@ -154,4 +182,4 @@ class Locker:
             logger.error("Authentication failed.")
 
 
-loc_obj = Locker(path=Path("/tmp/locker_test/something/"), action=Action.lock)
+loc_obj = Locker(path=Path("/tmp/locker_test/something/"), action=Action.unlock)
