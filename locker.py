@@ -40,7 +40,7 @@ class Locker:
         skip_auth: bool = False,
         skip_enc: bool = False,
         password: str | None = None,
-    ):
+    ) -> None:
         self.skip_auth = skip_auth
         self.skip_enc = skip_enc
         self.path = path
@@ -48,7 +48,7 @@ class Locker:
         self.encrypted_tar_path = self.tar_path.with_suffix(".enc")
         self.password = password
 
-    def _secure_auth_data_input(self):
+    def _secure_auth_data_input(self) -> AuthData:
         try:
             username = getpass.getuser()
             password = getpass.getpass(
@@ -73,7 +73,7 @@ class Locker:
             logger.error("Authentication failed.")
             exit(2)
 
-    def tar(self):
+    def tar(self) -> None:
         tar_process = subprocess.run(
             [
                 "tar",
@@ -91,7 +91,7 @@ class Locker:
             )
             exit(1)
 
-    def untar(self):
+    def untar(self) -> None:
         untar_process = subprocess.run(
             [
                 "tar",
@@ -108,7 +108,7 @@ class Locker:
             )
             exit(1)
 
-    def encrypt(self, password):
+    def encrypt(self, password: str) -> None:
         self.tar()
         enc_process = subprocess.run(
             [
@@ -134,7 +134,7 @@ class Locker:
             )
             exit(1)
 
-    def decrypt(self, password):
+    def decrypt(self, password: str) -> None:
         desc_process = subprocess.run(
             [
                 "openssl",
@@ -158,7 +158,7 @@ class Locker:
             exit(1)
         self.untar()
 
-    def setup_permission(self, action: Action):
+    def setup_permission(self, action: Action) -> None:
         if action == Action.lock:
             if self.skip_enc:
                 target = self.path
@@ -176,7 +176,7 @@ class Locker:
                 perm = 0o700
         os.chmod(target, perm)
 
-    def cleanup(self, action: Action):
+    def cleanup(self, action: Action) -> None:
         if not self.skip_enc:
             if action == Action.lock:
                 os.remove(self.tar_path)
@@ -185,7 +185,7 @@ class Locker:
                 os.remove(self.tar_path)
                 os.remove(self.encrypted_tar_path)
 
-    def lock(self):
+    def lock(self) -> None:
         if self.path.exists():
             if not self.skip_auth:
                 auth_data = self.authenticate()
@@ -203,7 +203,7 @@ class Locker:
         else:
             logger.error(f"{self.path} is not exist.")
 
-    def unlock(self):
+    def unlock(self) -> None:
         if (self.encrypted_tar_path.exists() and not self.skip_enc) or (
             self.path.exists() and self.skip_enc
         ):
@@ -264,7 +264,7 @@ def get_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main():
+def main() -> None:
     args = get_args()
     action = Action(args.action)
     path_list: list[Path] = []
