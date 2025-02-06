@@ -34,8 +34,15 @@ class AuthData:
 
 
 class Locker:
-    def __init__(self, path: Path, skip_auth: bool, password: str | None = None):
+    def __init__(
+        self,
+        path: Path,
+        skip_auth: bool = False,
+        skip_enc: bool = False,
+        password: str | None = None,
+    ):
         self.skip_auth = skip_auth
+        self.skip_enc = skip_enc
         self.path = path
         self.tar_path = self.path.parent / f".{self.path.name}.tar"
         self.encrypted_tar_path = self.tar_path.with_suffix(".enc")
@@ -151,13 +158,32 @@ class Locker:
             exit(1)
         self.untar()
 
-    def cleanup(self, action: Action):
+    def setup_permission(self, action: Action):
         if action == Action.lock:
-            os.remove(self.tar_path)
-            os.system(f"rm -rf {self.path}")
+            if self.skip_enc:
+                target = self.path
+            else:
+                target = self.encrypted_tar_path
+            perm = 0o000
         elif action == Action.unlock:
-            os.remove(self.tar_path)
-            os.remove(self.encrypted_tar_path)
+            if self.skip_enc:
+                target = self.path
+            else:
+                target = self.encrypted_tar_path
+            if self.path.is_file():
+                perm = 0o600
+            else:
+                perm = 0o700
+        os.chmod(target, perm)
+
+    def cleanup(self, action: Action):
+        if not self.skip_enc:
+            if action == Action.lock:
+                os.remove(self.tar_path)
+                os.system(f"rm -rf {self.path}")
+            elif action == Action.unlock:
+                os.remove(self.tar_path)
+                os.remove(self.encrypted_tar_path)
 
     def lock(self):
         if self.path.exists():
@@ -167,8 +193,9 @@ class Locker:
                     auth_data.password if not self.password else self.password
                 )
             self.password = DEFAULT_PASSWORD if not self.password else self.password
-            logger.info("Using password: %s", self.password)
-            self.encrypt(self.password)
+            if not self.skip_enc:
+                self.encrypt(self.password)
+            self.setup_permission(action=Action.lock)
             self.cleanup(action=Action.lock)
             logger.info(f"{self.path} locked")
         elif self.encrypted_tar_path.exists():
@@ -178,15 +205,18 @@ class Locker:
             exit(1)
 
     def unlock(self):
-        if self.encrypted_tar_path.exists():
+        if (self.encrypted_tar_path.exists() and not self.skip_enc) or (
+            self.path.exists() and self.skip_enc
+        ):
             if not self.skip_auth:
                 auth_data = self.authenticate()
                 self.password = (
                     auth_data.password if not self.password else self.password
                 )
             self.password = DEFAULT_PASSWORD if not self.password else self.password
-            logger.info("Using password: %s", self.password)
-            self.decrypt(self.password)
+            self.setup_permission(action=Action.unlock)
+            if not self.skip_enc:
+                self.decrypt(self.password)
             self.cleanup(action=Action.unlock)
             logger.info(f"{self.path} unlocked.")
         elif self.path.exists():
@@ -224,9 +254,14 @@ def get_args() -> argparse.Namespace:
         help="Skip user authentication.",
     )
     parser.add_argument(
+        "--skip-enc",
+        action="store_true",
+        help="Skip encryption.",
+    )
+    parser.add_argument(
         "--password",
         type=str,
-        help="Skip user authentication.",
+        help="Password to use for encryption.",
     )
     return parser.parse_args()
 
@@ -253,6 +288,7 @@ def main():
         locker_obj_parameters = {
             "path": path,
             "skip_auth": args.skip_auth,
+            "skip_enc": args.skip_enc,
         }
         if args.password:
             locker_obj_parameters["password"] = args.password
