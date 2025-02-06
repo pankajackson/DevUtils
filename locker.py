@@ -156,30 +156,40 @@ class Locker:
             exit(1)
 
     def lock(self):
-        auth_data = self.authenticate()
-        if auth_data:
-            if not auth_data.password:
-                auth_data.password = DEFAULT_PASSWORD
-            self.tar()
-            self.encrypt(auth_data.password)
-            os.remove(self.tar_path)
-            os.system(f"rm -rf {self.path}")
-            logger.info("Folder locked and encrypted.")
+        if self.path.exists():
+            auth_data = self.authenticate()
+            if auth_data:
+                if not auth_data.password:
+                    auth_data.password = DEFAULT_PASSWORD
+                self.tar()
+                self.encrypt(auth_data.password)
+                os.remove(self.tar_path)
+                os.system(f"rm -rf {self.path}")
+                logger.info("Folder locked and encrypted.")
+            else:
+                logger.error("Authentication failed.")
+        elif self.encrypted_tar_path.exists():
+            logger.info("Folder is already locked.")
         else:
-            logger.error("Authentication failed.")
+            logger.error("Folder is not exist.")
 
     def unlock(self):
-        auth_data = self.authenticate()
-        if auth_data:
-            if not auth_data.password:
-                auth_data.password = DEFAULT_PASSWORD
-            self.decrypt(auth_data.password)
-            self.untar()
-            os.remove(self.tar_path)
-            os.remove(self.encrypted_tar_path)
-            logger.info("Folder unlocked.")
+        if self.encrypted_tar_path.exists():
+            auth_data = self.authenticate()
+            if auth_data:
+                if not auth_data.password:
+                    auth_data.password = DEFAULT_PASSWORD
+                self.decrypt(auth_data.password)
+                self.untar()
+                os.remove(self.tar_path)
+                os.remove(self.encrypted_tar_path)
+                logger.info("Folder unlocked.")
+            else:
+                logger.error("Authentication failed.")
+        elif self.path.exists():
+            logger.info("Folder is not locked.")
         else:
-            logger.error("Authentication failed.")
+            logger.error("Folder is not exist.")
 
 
 loc_obj = Locker(path=Path("/tmp/locker_test/something/"), action=Action.unlock)
