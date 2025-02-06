@@ -34,10 +34,12 @@ class AuthData:
 
 
 class Locker:
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, skip_auth: bool, password: str | None = None):
+        self.skip_auth = skip_auth
         self.path = path
-        self.tar_path = self.path.with_suffix(".tar")
+        self.tar_path = self.path.parent / f".{self.path.name}.tar"
         self.encrypted_tar_path = self.tar_path.with_suffix(".enc")
+        self.password = password
 
     def _secure_auth_data_input(self):
         try:
@@ -55,7 +57,7 @@ class Locker:
 
     def authenticate(
         self,
-    ) -> AuthData | None:
+    ) -> AuthData:
         pam_authenticator = pam.pam()
         auth_data = self._secure_auth_data_input()
         if pam_authenticator.authenticate(auth_data.username, auth_data.password):
@@ -100,6 +102,7 @@ class Locker:
             exit(1)
 
     def encrypt(self, password):
+        self.tar()
         enc_process = subprocess.run(
             [
                 "openssl",
@@ -146,42 +149,51 @@ class Locker:
         if desc_process.returncode != 0:
             logger.error("Failed to decrypt file.\n" f"Error: {desc_process.stderr}")
             exit(1)
+        self.untar()
+
+    def cleanup(self, action: Action):
+        if action == Action.lock:
+            os.remove(self.tar_path)
+            os.system(f"rm -rf {self.path}")
+        elif action == Action.unlock:
+            os.remove(self.tar_path)
+            os.remove(self.encrypted_tar_path)
 
     def lock(self):
         if self.path.exists():
-            auth_data = self.authenticate()
-            if auth_data:
-                if not auth_data.password:
-                    auth_data.password = DEFAULT_PASSWORD
-                self.tar()
-                self.encrypt(auth_data.password)
-                os.remove(self.tar_path)
-                os.system(f"rm -rf {self.path}")
-                logger.info("Folder locked and encrypted.")
-            else:
-                logger.error("Authentication failed.")
+            if not self.skip_auth:
+                auth_data = self.authenticate()
+                self.password = (
+                    auth_data.password if not self.password else self.password
+                )
+            self.password = DEFAULT_PASSWORD if not self.password else self.password
+            logger.info("Using password: %s", self.password)
+            self.encrypt(self.password)
+            self.cleanup(action=Action.lock)
+            logger.info(f"{self.path} locked")
         elif self.encrypted_tar_path.exists():
-            logger.info("Folder is already locked.")
+            logger.info(f"{self.path} is already locked.")
         else:
-            logger.error("Folder is not exist.")
+            logger.error(f"{self.path} is not exist.")
+            exit(1)
 
     def unlock(self):
         if self.encrypted_tar_path.exists():
-            auth_data = self.authenticate()
-            if auth_data:
-                if not auth_data.password:
-                    auth_data.password = DEFAULT_PASSWORD
-                self.decrypt(auth_data.password)
-                self.untar()
-                os.remove(self.tar_path)
-                os.remove(self.encrypted_tar_path)
-                logger.info("Folder unlocked.")
-            else:
-                logger.error("Authentication failed.")
+            if not self.skip_auth:
+                auth_data = self.authenticate()
+                self.password = (
+                    auth_data.password if not self.password else self.password
+                )
+            self.password = DEFAULT_PASSWORD if not self.password else self.password
+            logger.info("Using password: %s", self.password)
+            self.decrypt(self.password)
+            self.cleanup(action=Action.unlock)
+            logger.info(f"{self.path} unlocked.")
         elif self.path.exists():
-            logger.info("Folder is not locked.")
+            logger.info(f"{self.path} is not locked.")
         else:
-            logger.error("Folder is not exist.")
+            logger.error(f"{self.path} is not exist.")
+            exit(1)
 
 
 def get_args() -> argparse.Namespace:
@@ -199,20 +211,58 @@ def get_args() -> argparse.Namespace:
         type=str,
         help="Path to Lock or Unlock the folder.",
     )
+    parser.add_argument(
+        "-i",
+        "--index",
+        type=str,
+        default=Path.home() / ".config/lxa_locker/index.locker",
+        help="Path to Index file containing the list of files and folders to be locked.",
+    )
+    parser.add_argument(
+        "--skip-auth",
+        action="store_true",
+        help="Skip user authentication.",
+    )
+    parser.add_argument(
+        "--password",
+        type=str,
+        help="Skip user authentication.",
+    )
     return parser.parse_args()
 
 
 def main():
     args = get_args()
     action = Action(args.action)
-    path = Path(args.path)
-    locker_obj = Locker(path)
-    if action == Action.lock:
-        locker_obj.lock()
-    elif action == Action.unlock:
-        locker_obj.unlock()
+    path_list: list[Path] = []
+    if args.path:
+        path_list.append(Path(args.path))
     else:
-        raise ValueError("Invalid action.")
+        path_index = Path(args.index)
+        if not path_index.exists():
+            logger.error(f"Index file {path_index} does not exist.")
+            exit(1)
+        elif not path_index.is_file():
+            logger.error(f"Index file {path_index} is not a file.")
+            exit(1)
+        else:
+            with open(path_index, "r") as f:
+                path_list = [Path(line.strip()) for line in f.readlines()]
+
+    for path in path_list:
+        locker_obj_parameters = {
+            "path": path,
+            "skip_auth": args.skip_auth,
+        }
+        if args.password:
+            locker_obj_parameters["password"] = args.password
+        locker_obj = Locker(**locker_obj_parameters)
+        if action == Action.lock:
+            locker_obj.lock()
+        elif action == Action.unlock:
+            locker_obj.unlock()
+        else:
+            raise ValueError("Invalid action.")
 
 
 if __name__ == "__main__":
