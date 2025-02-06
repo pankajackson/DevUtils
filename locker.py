@@ -34,18 +34,10 @@ class AuthData:
 
 
 class Locker:
-    def __init__(self, path: Path, action: Action):
+    def __init__(self, path: Path):
         self.path = path
         self.tar_path = self.path.with_suffix(".tar")
         self.encrypted_tar_path = self.tar_path.with_suffix(".enc")
-        self.action = action
-
-        if action == Action.lock:
-            self.lock()
-        elif action == Action.unlock:
-            self.unlock()
-        else:
-            raise ValueError("Invalid action.")
 
     def _secure_auth_data_input(self):
         try:
@@ -192,4 +184,36 @@ class Locker:
             logger.error("Folder is not exist.")
 
 
-loc_obj = Locker(path=Path("/tmp/locker_test/something/"), action=Action.unlock)
+def get_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="LXA Super Secure Folder Locker",
+    )
+    parser.add_argument(
+        "action",
+        choices=["lock", "unlock"],
+        help="Action to be performed.",
+    )
+    parser.add_argument(
+        "-p",
+        "--path",
+        type=str,
+        help="Path to Lock or Unlock the folder.",
+    )
+    return parser.parse_args()
+
+
+def main():
+    args = get_args()
+    action = Action(args.action)
+    path = Path(args.path)
+    locker_obj = Locker(path)
+    if action == Action.lock:
+        locker_obj.lock()
+    elif action == Action.unlock:
+        locker_obj.unlock()
+    else:
+        raise ValueError("Invalid action.")
+
+
+if __name__ == "__main__":
+    main()
