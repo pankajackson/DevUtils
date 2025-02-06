@@ -202,7 +202,6 @@ class Locker:
             logger.info(f"{self.path} is already locked.")
         else:
             logger.error(f"{self.path} is not exist.")
-            exit(1)
 
     def unlock(self):
         if (self.encrypted_tar_path.exists() and not self.skip_enc) or (
@@ -223,7 +222,6 @@ class Locker:
             logger.info(f"{self.path} is not locked.")
         else:
             logger.error(f"{self.path} is not exist.")
-            exit(1)
 
 
 def get_args() -> argparse.Namespace:
