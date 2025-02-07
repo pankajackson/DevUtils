@@ -63,6 +63,7 @@ class Locker:
         skip_auth: bool = False,
         skip_enc: bool = False,
         password: str | None = None,
+        verbose: bool = False,
     ) -> None:
         self.skip_auth = skip_auth
         self.skip_enc = skip_enc
@@ -70,6 +71,17 @@ class Locker:
         self.tar_path = self.path.parent / f".{self.path.name}.tar"
         self.encrypted_tar_path = self.tar_path.with_suffix(".enc")
         self.password = password
+        self.verbose = verbose
+
+    def std_log(self, msg: str, type: str = "info") -> None:
+        if self.verbose:
+            if type == "debug":
+                logger.debug(f"{type}:  {msg}")
+            if type == "error":
+                logger.error(f"{type}: {msg}")
+            elif type == "warning":
+                logger.warning(f"{type}: {msg}")
+            logger.info(f"{type}: {msg}")
 
     def _secure_auth_data_input(self) -> AuthData:
         try:
@@ -156,8 +168,9 @@ class Locker:
             )
             return True
         except subprocess.CalledProcessError as e:
-            logger.error(
-                f"Failed to encrypt {self.tar_path}.\nError: {e.stderr.strip()}"
+            self.std_log(
+                f"Failed to encrypt {self.tar_path}.\nError: {e.stderr.strip()}",
+                type="error",
             )
             return False
 
@@ -187,8 +200,9 @@ class Locker:
             self.untar()
             return True
         except subprocess.CalledProcessError as e:
-            logger.error(
-                f"Failed to decrypt {self.tar_path}.\nError: {e.stderr.strip()}"
+            self.std_log(
+                f"Failed to decrypt {self.tar_path}.\nError: {e.stderr.strip()}",
+                type="error",
             )
             return False
 
@@ -210,7 +224,7 @@ class Locker:
                 elif path.is_dir():
                     shutil.rmtree(path, ignore_errors=True)
             except Exception as e:
-                logger.error(f"Failed to remove {path}: {e}")
+                self.std_log(f"Failed to remove {path}: {e}", type="error")
 
         safe_remove(self.tar_path)
 
@@ -349,6 +363,13 @@ def get_args() -> argparse.Namespace:
         help="path to Index file containing the list of files and folders to be locked or unlocked.",
     )
     parser.add_argument(
+        "-V",
+        "--verbose",
+        action="store_true",
+        default=False,
+        help="verbose output to stdout and stderr.",
+    )
+    parser.add_argument(
         "--skip-auth",
         action="store_true",
         help="skip user authentication.",
@@ -390,6 +411,7 @@ def main() -> None:
             "path": path,
             "skip_auth": args.skip_auth,
             "skip_enc": args.skip_enc,
+            "verbose": args.verbose,
         }
         if args.password:
             locker_obj_parameters["password"] = args.password
