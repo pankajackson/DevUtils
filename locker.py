@@ -32,10 +32,10 @@ class Action(Enum):
 
 
 class Status(Enum):
-    locked = "locked"
+    e_locked = "e_locked"
+    ne_locked = "ne_locked"
     unlocked = "unlocked"
     inprogress = "inprogress"
-    found = "found"
     notfound = "notfound"
     conflict = "conflict"
     unknown = "unknown"
@@ -67,7 +67,7 @@ class Locker:
         try:
             username = getpass.getuser()
             password = getpass.getpass(
-                prompt=f"Enter your password for user {username}: ", stream=None
+                prompt=f"Enter password for user {username}: ", stream=None
             )
             return AuthData(username, password)
         except KeyboardInterrupt:
@@ -173,8 +173,8 @@ class Locker:
             exit(1)
         self.untar()
 
-    def setup_permission(self, action: Action) -> None:
-        target = self.path if self.skip_enc else self.encrypted_tar_path
+    def setup_permission(self, action: Action, enc: bool) -> None:
+        target = self.encrypted_tar_path if enc else self.path
         perm = 0o000
         if action == Action.unlock:
             if self.path.is_file():
@@ -183,8 +183,8 @@ class Locker:
                 perm = 0o700
         os.chmod(target, perm)
 
-    def cleanup(self, action: Action) -> None:
-        if not self.skip_enc:
+    def cleanup(self, action: Action, enc: bool) -> None:
+        if enc:
             if action == Action.lock:
                 os.remove(self.tar_path)
                 os.system(f"rm -rf {self.path}")
@@ -206,6 +206,13 @@ class Locker:
         md5_hash = hashlib.md5(byte_input)
         return md5_hash.hexdigest()
 
+    def setup_password(self) -> str:
+        if not self.skip_auth:
+            auth_data = self.authenticate()
+            self.password = auth_data.username if not self.password else self.password
+        self.password = DEFAULT_PASSWORD if not self.password else self.password
+        return self.password
+
     def acquire_process_lock(self):
         lock_file_name = f"{self.compute_md5_hexdigest(str(self.path))}.lock"
         lock_file = APP_DIR / lock_file_name
@@ -218,7 +225,7 @@ class Locker:
             fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
             return lock_fd
         except BlockingIOError:
-            logger.error(f"Another instance is running for {lock_file_name}")
+            # Lock already acquired
             return None
 
     def release_process_lock(self, lock_fd):
@@ -231,30 +238,21 @@ class Locker:
         if not lock_fd:
             return Status.inprogress
         try:
-            if not self.skip_enc:
-                if self.path.exists() and not self.encrypted_tar_path.exists():
-                    return Status.unlocked
-                elif not self.path.exists() and self.encrypted_tar_path.exists():
-                    return Status.locked
-                elif self.path.exists() and self.encrypted_tar_path.exists():
+            if self.encrypted_tar_path.exists():
+                if self.path.exists():
                     return Status.conflict
-                elif not self.path.exists() and not self.encrypted_tar_path.exists():
+                else:
+                    return Status.e_locked
+            else:
+                if not self.path.exists():
                     return Status.notfound
                 else:
-                    return Status.unknown
-            else:
-                if self.encrypted_tar_path.exists():
-                    return Status.conflict
-                else:
-                    if not self.path.exists():
-                        return Status.notfound
+                    file_stat = os.stat(self.path)
+                    permission_string = stat.filemode(file_stat.st_mode)
+                    if permission_string[1:10] == "-" * 9:
+                        return Status.ne_locked
                     else:
-                        file_stat = os.stat(self.path)
-                        permission_string = stat.filemode(file_stat.st_mode)
-                        if permission_string[1:10] == "-" * 9:
-                            return Status.locked
-                        else:
-                            return Status.unlocked
+                        return Status.unlocked
         finally:
             self.release_process_lock(lock_fd)
 
@@ -267,54 +265,28 @@ class Locker:
         if not lock_fd:
             return
         try:
-            if self.path.exists() and not self.encrypted_tar_path.exists():
-                if not self.skip_auth:
-                    auth_data = self.authenticate()
-                    self.password = (
-                        auth_data.password if not self.password else self.password
-                    )
-                self.password = DEFAULT_PASSWORD if not self.password else self.password
-                if not self.skip_enc:
-                    self.encrypt(self.password)
-                self.setup_permission(action=Action.lock)
-                self.cleanup(action=Action.lock)
-                logger.info(f"{self.path} locked.")
-            elif self.encrypted_tar_path.exists() and not self.path.exists():
-                logger.info(f"{self.path} is already locked.")
-            elif self.path.exists() and self.encrypted_tar_path.exists():
-                logger.warning(f"{self.path} is already has it's locked copy.")
-            elif not self.encrypted_tar_path.exists() and not self.path.exists():
-                logger.error(f"{self.path} is not exist.")
+            if not self.skip_enc:
+                self.encrypt(self.setup_password())
+            self.setup_permission(action=Action.lock, enc=not self.skip_enc)
+            self.cleanup(action=Action.lock, enc=not self.skip_enc)
+            logger.info(f"{self.path} locked.")
         finally:
             self.release_process_lock(lock_fd)
 
     def unlock(self) -> None:
         status = self.status()
-        if status != Status.locked:
+        if status not in (Status.e_locked, Status.ne_locked):
             logger.error(f"{self.path} {status.value}.")
             return
         lock_fd = self.acquire_process_lock()
         if not lock_fd:
             return
         try:
-            if (self.encrypted_tar_path.exists() and not self.skip_enc) or (
-                self.path.exists() and self.skip_enc
-            ):
-                if not self.skip_auth:
-                    auth_data = self.authenticate()
-                    self.password = (
-                        auth_data.password if not self.password else self.password
-                    )
-                self.password = DEFAULT_PASSWORD if not self.password else self.password
-                self.setup_permission(action=Action.unlock)
-                if not self.skip_enc:
-                    self.decrypt(self.password)
-                self.cleanup(action=Action.unlock)
-                logger.info(f"{self.path} unlocked.")
-            elif self.path.exists():
-                logger.info(f"{self.path} is not locked.")
-            else:
-                logger.error(f"{self.path} is not exist.")
+            self.setup_permission(action=Action.unlock, enc=Status.e_locked == status)
+            if Status.e_locked == status:
+                self.decrypt(self.setup_password())
+            self.cleanup(action=Action.unlock, enc=Status.e_locked == status)
+            logger.info(f"{self.path} unlocked.")
         finally:
             self.release_process_lock(lock_fd)
 
