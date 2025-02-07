@@ -46,7 +46,7 @@ class Locker:
     ) -> None:
         self.skip_auth = skip_auth
         self.skip_enc = skip_enc
-        self.path = path
+        self.path = path.absolute()
         self.tar_path = self.path.parent / f".{self.path.name}.tar"
         self.encrypted_tar_path = self.tar_path.with_suffix(".enc")
         self.password = password
@@ -227,7 +227,7 @@ class Locker:
         if not lock_fd:
             return
         try:
-            if self.path.exists():
+            if self.path.exists() and not self.encrypted_tar_path.exists():
                 if not self.skip_auth:
                     auth_data = self.authenticate()
                     self.password = (
@@ -239,9 +239,11 @@ class Locker:
                 self.setup_permission(action=Action.lock)
                 self.cleanup(action=Action.lock)
                 logger.info(f"{self.path} locked")
-            elif self.encrypted_tar_path.exists():
+            elif self.encrypted_tar_path.exists() and not self.path.exists():
                 logger.info(f"{self.path} is already locked.")
-            else:
+            elif self.path.exists() and self.encrypted_tar_path.exists():
+                logger.warning(f"{self.path} is already has it's locked copy.")
+            elif not self.encrypted_tar_path.exists() and not self.path.exists():
                 logger.error(f"{self.path} is not exist.")
         finally:
             self.release_process_lock(lock_fd)
