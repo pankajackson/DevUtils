@@ -130,55 +130,67 @@ class Locker:
             )
             exit(1)
 
-    def encrypt(self, password: str) -> None:
-        self.tar()
-        enc_process = subprocess.run(
-            [
-                "openssl",
-                "enc",
-                "-aes-256-cbc",
-                "-pbkdf2",
-                "-iter",
-                "100000",
-                "-salt",
-                "-in",
-                self.tar_path,
-                "-out",
-                self.encrypted_tar_path,
-                "-k",
-                password,
-            ],
-            check=True,
-        )
-        if enc_process.returncode != 0:
-            logger.error(
-                f"Failed to encrypt {self.tar_path}.\n" f"Error: {enc_process.stderr}"
+    def encrypt(self, password: str) -> bool:
+        try:
+            self.tar()
+            enc_process = subprocess.run(
+                [
+                    "openssl",
+                    "enc",
+                    "-aes-256-cbc",
+                    "-pbkdf2",
+                    "-iter",
+                    "100000",
+                    "-salt",
+                    "-in",
+                    self.tar_path,
+                    "-out",
+                    self.encrypted_tar_path,
+                    "-k",
+                    password,
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=True,
             )
-            exit(1)
+            return True
+        except subprocess.CalledProcessError as e:
+            logger.error(
+                f"Failed to encrypt {self.tar_path}.\nError: {e.stderr.strip()}"
+            )
+            return False
 
-    def decrypt(self, password: str) -> None:
-        desc_process = subprocess.run(
-            [
-                "openssl",
-                "enc",
-                "-d",
-                "-aes-256-cbc",
-                "-pbkdf2",
-                "-iter",
-                "100000",
-                "-in",
-                self.encrypted_tar_path,
-                "-out",
-                self.tar_path,
-                "-k",
-                password,
-            ],
-            check=True,
-        )
-        if desc_process.returncode != 0:
-            logger.error("Failed to decrypt file.\n" f"Error: {desc_process.stderr}")
-            exit(1)
-        self.untar()
+    def decrypt(self, password: str) -> bool:
+        try:
+            desc_process = subprocess.run(
+                [
+                    "openssl",
+                    "enc",
+                    "-d",
+                    "-aes-256-cbc",
+                    "-pbkdf2",
+                    "-iter",
+                    "100000",
+                    "-in",
+                    self.encrypted_tar_path,
+                    "-out",
+                    self.tar_path,
+                    "-k",
+                    password,
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=True,
+            )
+            self.untar()
+            return True
+        except subprocess.CalledProcessError as e:
+            logger.error(
+                f"Failed to decrypt {self.tar_path}.\nError: {e.stderr.strip()}"
+            )
+            return False
 
     def setup_permission(self, action: Action, enc: bool) -> None:
         target = self.encrypted_tar_path if enc else self.path
@@ -191,17 +203,22 @@ class Locker:
         os.chmod(target, perm)
 
     def cleanup(self, action: Action | None = None, enc: bool = False) -> None:
-        print(action, enc)
-        if action is None:
-            os.remove(self.tar_path)
-        else:
-            if enc:
-                if action == Action.lock:
-                    os.remove(self.tar_path)
-                    os.system(f"rm -rf {self.path}")
-                elif action == Action.unlock:
-                    os.remove(self.tar_path)
-                    os.remove(self.encrypted_tar_path)
+        def safe_remove(path: Path) -> None:
+            try:
+                if path.is_file() or path.is_symlink():
+                    path.unlink(missing_ok=True)
+                elif path.is_dir():
+                    shutil.rmtree(path, ignore_errors=True)
+            except Exception as e:
+                logger.error(f"Failed to remove {path}: {e}")
+
+        safe_remove(self.tar_path)
+
+        if enc:
+            if action == Action.lock:
+                safe_remove(self.path)
+            elif action == Action.unlock:
+                safe_remove(self.encrypted_tar_path)
 
     def compute_md5_hexdigest(self, input_data: str | bytes) -> str:
         """Compute MD5 hash of input and return hexadecimal digest."""
@@ -221,8 +238,7 @@ class Locker:
         if not self.skip_auth:
             auth_data = self.authenticate()
             self.password = auth_data.username if not self.password else self.password
-        self.password = DEFAULT_PASSWORD if not self.password else self.password
-        return self.password
+        return self.password or DEFAULT_PASSWORD
 
     def acquire_process_lock(self):
         lock_file_name = f"{self.compute_md5_hexdigest(str(self.path))}.lock"
@@ -276,7 +292,8 @@ class Locker:
             return Status.inprogress
         try:
             if not self.skip_enc:
-                self.encrypt(self.setup_password())
+                if not self.encrypt(self.setup_password()):
+                    raise Exception("Failed to encrypt {}".format(self.path))
             elif not self.skip_auth:
                 self.authenticate()
             self.setup_permission(action=Action.lock, enc=not self.skip_enc)
@@ -298,7 +315,8 @@ class Locker:
         try:
             self.setup_permission(action=Action.unlock, enc=Status.e_locked == status)
             if Status.e_locked == status:
-                self.decrypt(self.setup_password())
+                if not self.decrypt(self.setup_password()):
+                    raise Exception("Failed to decrypt {}".format(self.path))
             self.cleanup(action=Action.unlock, enc=Status.e_locked == status)
             return Status.unlocked
         except Exception as e:
