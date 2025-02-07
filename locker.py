@@ -12,9 +12,12 @@ from pathlib import Path
 import logging
 from dataclasses import dataclass
 import argparse
+import hashlib
+import fcntl
 
 
 DEFAULT_PASSWORD = "123"
+APP_DIR = Path.home() / ".config/lxa_locker"
 
 
 # Set up logging
@@ -185,43 +188,89 @@ class Locker:
                 os.remove(self.tar_path)
                 os.remove(self.encrypted_tar_path)
 
-    def lock(self) -> None:
-        if self.path.exists():
-            if not self.skip_auth:
-                auth_data = self.authenticate()
-                self.password = (
-                    auth_data.password if not self.password else self.password
-                )
-            self.password = DEFAULT_PASSWORD if not self.password else self.password
-            if not self.skip_enc:
-                self.encrypt(self.password)
-            self.setup_permission(action=Action.lock)
-            self.cleanup(action=Action.lock)
-            logger.info(f"{self.path} locked")
-        elif self.encrypted_tar_path.exists():
-            logger.info(f"{self.path} is already locked.")
+    def compute_md5_hexdigest(self, input_data: str | bytes):
+        """Compute MD5 hash of input and return hexadecimal digest."""
+        # Ensure input is in bytes
+        if isinstance(input_data, str):
+            byte_input = input_data.encode("utf-8")
+        elif isinstance(input_data, bytes):
+            byte_input = input_data
         else:
-            logger.error(f"{self.path} is not exist.")
+            raise TypeError("Input must be string or bytes")
+
+        # Create MD5 hash and return hex digest
+        md5_hash = hashlib.md5(byte_input)
+        return md5_hash.hexdigest()
+
+    def acquire_process_lock(self):
+        lock_file_name = f"{self.compute_md5_hexdigest(str(self.path))}.lock"
+        lock_file = APP_DIR / lock_file_name
+        if not os.path.exists(lock_file):
+            open(lock_file, "a").close()
+
+        lock_fd = open(lock_file, "r+")
+        try:
+            # Acquire an exclusive lock
+            fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return lock_fd
+        except BlockingIOError:
+            logger.error(f"Another instance is running for {lock_file_name}")
+            return None
+
+    def release_process_lock(self, lock_fd):
+        if lock_fd:
+            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+            lock_fd.close()
+
+    def lock(self) -> None:
+        lock_fd = self.acquire_process_lock()
+        if not lock_fd:
+            return
+        try:
+            if self.path.exists():
+                if not self.skip_auth:
+                    auth_data = self.authenticate()
+                    self.password = (
+                        auth_data.password if not self.password else self.password
+                    )
+                self.password = DEFAULT_PASSWORD if not self.password else self.password
+                if not self.skip_enc:
+                    self.encrypt(self.password)
+                self.setup_permission(action=Action.lock)
+                self.cleanup(action=Action.lock)
+                logger.info(f"{self.path} locked")
+            elif self.encrypted_tar_path.exists():
+                logger.info(f"{self.path} is already locked.")
+            else:
+                logger.error(f"{self.path} is not exist.")
+        finally:
+            self.release_process_lock(lock_fd)
 
     def unlock(self) -> None:
-        if (self.encrypted_tar_path.exists() and not self.skip_enc) or (
-            self.path.exists() and self.skip_enc
-        ):
-            if not self.skip_auth:
-                auth_data = self.authenticate()
-                self.password = (
-                    auth_data.password if not self.password else self.password
-                )
-            self.password = DEFAULT_PASSWORD if not self.password else self.password
-            self.setup_permission(action=Action.unlock)
-            if not self.skip_enc:
-                self.decrypt(self.password)
-            self.cleanup(action=Action.unlock)
-            logger.info(f"{self.path} unlocked.")
-        elif self.path.exists():
-            logger.info(f"{self.path} is not locked.")
-        else:
-            logger.error(f"{self.path} is not exist.")
+        lock_fd = self.acquire_process_lock()
+        if not lock_fd:
+            return
+        try:
+            if (self.encrypted_tar_path.exists() and not self.skip_enc) or (
+                self.path.exists() and self.skip_enc
+            ):
+                if not self.skip_auth:
+                    auth_data = self.authenticate()
+                    self.password = (
+                        auth_data.password if not self.password else self.password
+                    )
+                self.password = DEFAULT_PASSWORD if not self.password else self.password
+                self.setup_permission(action=Action.unlock)
+                if not self.skip_enc:
+                    self.decrypt(self.password)
+                self.cleanup(action=Action.unlock)
+                logger.info(f"{self.path} unlocked.")
+            elif self.path.exists():
+                logger.info(f"{self.path} is not locked.")
+            else:
+                logger.error(f"{self.path} is not exist.")
+        finally:
+            self.release_process_lock(lock_fd)
 
 
 def get_args() -> argparse.Namespace:
@@ -243,7 +292,7 @@ def get_args() -> argparse.Namespace:
         "-i",
         "--index",
         type=str,
-        default=Path.home() / ".config/lxa_locker/index.locker",
+        default=APP_DIR / "index.locker",
         help="path to Index file containing the list of files and folders to be locked or unlocked.",
     )
     parser.add_argument(
