@@ -192,7 +192,7 @@ class Locker:
                 os.remove(self.tar_path)
                 os.remove(self.encrypted_tar_path)
 
-    def compute_md5_hexdigest(self, input_data: str | bytes):
+    def compute_md5_hexdigest(self, input_data: str | bytes) -> str:
         """Compute MD5 hash of input and return hexadecimal digest."""
         # Ensure input is in bytes
         if isinstance(input_data, str):
@@ -228,7 +228,7 @@ class Locker:
             # Lock already acquired
             return None
 
-    def release_process_lock(self, lock_fd):
+    def release_process_lock(self, lock_fd) -> None:
         if lock_fd:
             fcntl.flock(lock_fd, fcntl.LOCK_UN)
             lock_fd.close()
@@ -256,37 +256,37 @@ class Locker:
         finally:
             self.release_process_lock(lock_fd)
 
-    def lock(self) -> None:
+    def lock(self) -> Status:
         status = self.status()
         if status != Status.unlocked:
-            logger.error(f"{self.path} {status.name}.")
-            return
+            return status
         lock_fd = self.acquire_process_lock()
         if not lock_fd:
-            return
+            return Status.inprogress
         try:
             if not self.skip_enc:
                 self.encrypt(self.setup_password())
+            elif not self.skip_auth:
+                self.authenticate()
             self.setup_permission(action=Action.lock, enc=not self.skip_enc)
             self.cleanup(action=Action.lock, enc=not self.skip_enc)
-            logger.info(f"{self.path} locked.")
+            return Status.e_locked if not self.skip_enc else Status.ne_locked
         finally:
             self.release_process_lock(lock_fd)
 
-    def unlock(self) -> None:
+    def unlock(self) -> Status:
         status = self.status()
         if status not in (Status.e_locked, Status.ne_locked):
-            logger.error(f"{self.path} {status.value}.")
-            return
+            return status
         lock_fd = self.acquire_process_lock()
         if not lock_fd:
-            return
+            return Status.inprogress
         try:
             self.setup_permission(action=Action.unlock, enc=Status.e_locked == status)
             if Status.e_locked == status:
                 self.decrypt(self.setup_password())
             self.cleanup(action=Action.unlock, enc=Status.e_locked == status)
-            logger.info(f"{self.path} unlocked.")
+            return Status.unlocked
         finally:
             self.release_process_lock(lock_fd)
 
@@ -358,14 +358,17 @@ def main() -> None:
         if args.password:
             locker_obj_parameters["password"] = args.password
         locker_obj = Locker(**locker_obj_parameters)
-        if action == Action.lock:
-            locker_obj.lock()
-        elif action == Action.unlock:
-            locker_obj.unlock()
-        elif action == Action.status:
-            print(locker_obj.status().value)
-        else:
+        action_methods = {
+            Action.lock: locker_obj.lock,
+            Action.unlock: locker_obj.unlock,
+            Action.status: locker_obj.status,
+        }
+
+        if action not in action_methods:
             raise ValueError("Invalid action.")
+
+        result = action_methods[action]()
+        print(f"{path} {result.value}")
 
 
 if __name__ == "__main__":
