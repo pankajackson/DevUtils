@@ -11,7 +11,7 @@
     - [1. Virtual Machine Manager](#1-virtual-machine-manager)
     - [2. Camera Device Manager](#2-camera-device-manager)
     - [3. Repository Migration Tool](#3-repository-migration-tool)
-    - [**4. LXA Super Secure Folder Locker**](#4-lxa-super-secure-folder-locker)
+    - [4. LXA Super Secure Folder Locker](#4-lxa-super-secure-folder-locker)
   - [Adding New Utilities](#adding-new-utilities)
   - [Contributing](#contributing)
   - [License](#license)
@@ -182,7 +182,7 @@ The script provides detailed logging output for each step. Logs can help identif
 
 ---
 
-### **4. LXA Super Secure Folder Locker**
+### 4. LXA Super Secure Folder Locker
 
 **Description**:  
 LXA Super Secure Folder Locker is a Python-based utility that securely locks and encrypts files or directories using AES-256 encryption. It provides authentication using PAM, applies strict file permissions, and prevents unauthorized access using process-based locking.
