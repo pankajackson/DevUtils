@@ -231,35 +231,35 @@ def get_args() -> argparse.Namespace:
     parser.add_argument(
         "action",
         choices=["lock", "unlock"],
-        help="Action to be performed.",
+        help="action to be performed.",
     )
     parser.add_argument(
         "-p",
         "--path",
         type=str,
-        help="Path to Lock or Unlock the folder.",
+        help="path to lock or unlock.",
     )
     parser.add_argument(
         "-i",
         "--index",
         type=str,
         default=Path.home() / ".config/lxa_locker/index.locker",
-        help="Path to Index file containing the list of files and folders to be locked.",
+        help="path to Index file containing the list of files and folders to be locked or unlocked.",
     )
     parser.add_argument(
         "--skip-auth",
         action="store_true",
-        help="Skip user authentication.",
+        help="skip user authentication.",
     )
     parser.add_argument(
         "--skip-enc",
         action="store_true",
-        help="Skip encryption.",
+        help="skip encryption.",
     )
     parser.add_argument(
         "--password",
         type=str,
-        help="Password to use for encryption.",
+        help="password to use for encryption.",
     )
     return parser.parse_args()
 
