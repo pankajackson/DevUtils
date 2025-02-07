@@ -14,8 +14,9 @@ from dataclasses import dataclass
 import argparse
 import hashlib
 import fcntl
+import shutil
 
-
+REQUIRED_BINARIES = ["tar", "openssl"]
 DEFAULT_PASSWORD = "123"
 APP_DIR = Path.home() / ".config/lxa_locker"
 
@@ -48,6 +49,13 @@ class AuthData:
     password: str
 
 
+def check_dependencies():
+    for binary in REQUIRED_BINARIES:
+        if shutil.which(binary) is None:
+            logger.error(f"Required binary '{binary}' is missing. Please install it.")
+            exit(1)
+
+
 class Locker:
     def __init__(
         self,
@@ -77,16 +85,15 @@ class Locker:
             logger.error(f"An error occurred: {e}")
             exit(1)
 
-    def authenticate(
-        self,
-    ) -> AuthData:
+    def authenticate(self) -> AuthData:
         pam_authenticator = pam.pam()
-        auth_data = self._secure_auth_data_input()
-        if pam_authenticator.authenticate(auth_data.username, auth_data.password):
-            return auth_data
-        else:
-            logger.error("Authentication failed.")
-            exit(2)
+        for attempt in range(3):  # Max retries: 3
+            auth_data = self._secure_auth_data_input()
+            if pam_authenticator.authenticate(auth_data.username, auth_data.password):
+                return auth_data
+            logger.warning("Authentication failed. Try again.")
+        logger.error("Authentication failed after 3 attempts.")
+        exit(2)
 
     def tar(self) -> None:
         tar_process = subprocess.run(
@@ -183,14 +190,18 @@ class Locker:
                 perm = 0o700
         os.chmod(target, perm)
 
-    def cleanup(self, action: Action, enc: bool) -> None:
-        if enc:
-            if action == Action.lock:
-                os.remove(self.tar_path)
-                os.system(f"rm -rf {self.path}")
-            elif action == Action.unlock:
-                os.remove(self.tar_path)
-                os.remove(self.encrypted_tar_path)
+    def cleanup(self, action: Action | None = None, enc: bool = False) -> None:
+        print(action, enc)
+        if action is None:
+            os.remove(self.tar_path)
+        else:
+            if enc:
+                if action == Action.lock:
+                    os.remove(self.tar_path)
+                    os.system(f"rm -rf {self.path}")
+                elif action == Action.unlock:
+                    os.remove(self.tar_path)
+                    os.remove(self.encrypted_tar_path)
 
     def compute_md5_hexdigest(self, input_data: str | bytes) -> str:
         """Compute MD5 hash of input and return hexadecimal digest."""
@@ -271,6 +282,9 @@ class Locker:
             self.setup_permission(action=Action.lock, enc=not self.skip_enc)
             self.cleanup(action=Action.lock, enc=not self.skip_enc)
             return Status.e_locked if not self.skip_enc else Status.ne_locked
+        except Exception as e:
+            self.cleanup()
+            return Status.error
         finally:
             self.release_process_lock(lock_fd)
 
@@ -287,6 +301,9 @@ class Locker:
                 self.decrypt(self.setup_password())
             self.cleanup(action=Action.unlock, enc=Status.e_locked == status)
             return Status.unlocked
+        except Exception as e:
+            self.cleanup()
+            return Status.error
         finally:
             self.release_process_lock(lock_fd)
 
@@ -332,6 +349,7 @@ def get_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    check_dependencies()
     args = get_args()
     action = Action(args.action)
     path_list: list[Path] = []
