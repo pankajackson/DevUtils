@@ -4,7 +4,7 @@ Requirements:
 - pam (sudo pacman -S python-pam)
 - tar
 """
-import os, subprocess
+import os, subprocess, stat
 import pam
 import getpass
 from enum import Enum
@@ -28,6 +28,18 @@ logger = logging.getLogger("locker" if __name__ == "__main__" else __name__)
 class Action(Enum):
     lock = "lock"
     unlock = "unlock"
+    status = "status"
+
+
+class Status(Enum):
+    locked = "locked"
+    unlocked = "unlocked"
+    inprogress = "inprogress"
+    found = "found"
+    notfound = "notfound"
+    conflict = "conflict"
+    unknown = "unknown"
+    error = "error"
 
 
 @dataclass
@@ -162,17 +174,9 @@ class Locker:
         self.untar()
 
     def setup_permission(self, action: Action) -> None:
-        if action == Action.lock:
-            if self.skip_enc:
-                target = self.path
-            else:
-                target = self.encrypted_tar_path
-            perm = 0o000
-        elif action == Action.unlock:
-            if self.skip_enc:
-                target = self.path
-            else:
-                target = self.encrypted_tar_path
+        target = self.path if self.skip_enc else self.encrypted_tar_path
+        perm = 0o000
+        if action == Action.unlock:
             if self.path.is_file():
                 perm = 0o600
             else:
@@ -222,7 +226,43 @@ class Locker:
             fcntl.flock(lock_fd, fcntl.LOCK_UN)
             lock_fd.close()
 
+    def status(self) -> Status:
+        lock_fd = self.acquire_process_lock()
+        if not lock_fd:
+            return Status.inprogress
+        try:
+            if not self.skip_enc:
+                if self.path.exists() and not self.encrypted_tar_path.exists():
+                    return Status.unlocked
+                elif not self.path.exists() and self.encrypted_tar_path.exists():
+                    return Status.locked
+                elif self.path.exists() and self.encrypted_tar_path.exists():
+                    return Status.conflict
+                elif not self.path.exists() and not self.encrypted_tar_path.exists():
+                    return Status.notfound
+                else:
+                    return Status.unknown
+            else:
+                if self.encrypted_tar_path.exists():
+                    return Status.conflict
+                else:
+                    if not self.path.exists():
+                        return Status.notfound
+                    else:
+                        file_stat = os.stat(self.path)
+                        permission_string = stat.filemode(file_stat.st_mode)
+                        if permission_string[1:10] == "-" * 9:
+                            return Status.locked
+                        else:
+                            return Status.unlocked
+        finally:
+            self.release_process_lock(lock_fd)
+
     def lock(self) -> None:
+        status = self.status()
+        if status != Status.unlocked:
+            logger.error(f"{self.path} {status.name}.")
+            return
         lock_fd = self.acquire_process_lock()
         if not lock_fd:
             return
@@ -238,7 +278,7 @@ class Locker:
                     self.encrypt(self.password)
                 self.setup_permission(action=Action.lock)
                 self.cleanup(action=Action.lock)
-                logger.info(f"{self.path} locked")
+                logger.info(f"{self.path} locked.")
             elif self.encrypted_tar_path.exists() and not self.path.exists():
                 logger.info(f"{self.path} is already locked.")
             elif self.path.exists() and self.encrypted_tar_path.exists():
@@ -249,6 +289,10 @@ class Locker:
             self.release_process_lock(lock_fd)
 
     def unlock(self) -> None:
+        status = self.status()
+        if status != Status.locked:
+            logger.error(f"{self.path} {status.value}.")
+            return
         lock_fd = self.acquire_process_lock()
         if not lock_fd:
             return
@@ -281,7 +325,7 @@ def get_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "action",
-        choices=["lock", "unlock"],
+        choices=["lock", "unlock", "status"],
         help="action to be performed.",
     )
     parser.add_argument(
@@ -346,6 +390,8 @@ def main() -> None:
             locker_obj.lock()
         elif action == Action.unlock:
             locker_obj.unlock()
+        elif action == Action.status:
+            print(locker_obj.status().value)
         else:
             raise ValueError("Invalid action.")
 
