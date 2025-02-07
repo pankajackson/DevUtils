@@ -11,6 +11,7 @@
     - [1. Virtual Machine Manager](#1-virtual-machine-manager)
     - [2. Camera Device Manager](#2-camera-device-manager)
     - [3. Repository Migration Tool](#3-repository-migration-tool)
+    - [**4. LXA Super Secure Folder Locker**](#4-lxa-super-secure-folder-locker)
   - [Adding New Utilities](#adding-new-utilities)
   - [Contributing](#contributing)
   - [License](#license)
@@ -118,6 +119,7 @@ cd devutils
 
 ### 3. Repository Migration Tool
 
+**Description**:  
 This tool helps in migrating a Git repository from one location to another while supporting repository creation on platforms like GitHub. It simplifies cloning, pushing, and managing repositories across different remotes.
 
 **Features**
@@ -177,6 +179,130 @@ Run the script with the required arguments:
 **Logs**
 
 The script provides detailed logging output for each step. Logs can help identify missing tools, invalid inputs, or migration issues.
+
+---
+
+### **4. LXA Super Secure Folder Locker**
+
+**Description**:  
+LXA Super Secure Folder Locker is a Python-based utility that securely locks and encrypts files or directories using AES-256 encryption. It provides authentication using PAM, applies strict file permissions, and prevents unauthorized access using process-based locking.
+
+**Features**:
+
+- Lock and encrypt files and directories securely.
+- Unlock and restore encrypted files or directories.
+- Check the status of a locked/unlocked file or directory.
+- Uses OpenSSL AES-256 encryption with PBKDF2 key derivation.
+- Supports PAM authentication before unlocking (can be skipped if required).
+- Prevents concurrent access via file-based locking.
+- Provides verbose logging for debugging and monitoring.
+
+**Dependencies**:
+
+- Python 3.x
+- `openssl` (for encryption and decryption)
+- `pam` (install using `sudo pacman -S python-pam` or `pip install python-pam`)
+- `tar` (for compressing directories before encryption)
+
+---
+
+**Usage**
+
+1. Navigate to the script directory:
+
+   ```bash
+   cd devutils
+   ```
+
+2. Run the script with one of the following commands:
+
+   ```bash
+   python3 locker [command] [options]
+   ```
+
+**Commands**:
+| Command | Description | Example |
+|---------|------------|---------|
+| `lock` | Lock and encrypt a file or directory | `python3 locker lock -p ~/Documents` |
+| `unlock` | Unlock and decrypt a file or directory | `python3 locker unlock -p ~/Documents` |
+| `status` | Check if a file/directory is locked or unlocked | `python3 locker status -p ~/Documents` |
+| `lock (batch mode)` | Lock multiple directories using an index file | `python3 locker lock -i ~/index.locker` |
+
+---
+
+**Options**
+
+| Option          | Description                                       | Example                   |
+| --------------- | ------------------------------------------------- | ------------------------- |
+| `-p, --path`    | Path to the file or directory to lock/unlock.     | `-p ~/Downloads`          |
+| `-i, --index`   | Path to an index file containing multiple paths.  | `-i ~/index.locker`       |
+| `-V, --verbose` | Enable verbose logging.                           | `--verbose`               |
+| `--skip-auth`   | Skip user authentication (useful for automation). | `--skip-auth`             |
+| `--skip-enc`    | Skip encryption (locks using permissions only).   | `--skip-enc`              |
+| `--password`    | Provide a password for encryption/decryption.     | `--password mysecurepass` |
+
+---
+
+**Examples**
+
+🔒 **Lock a directory with encryption**:
+
+```bash
+python3 locker lock -p ~/Documents
+```
+
+🔓 **Unlock a directory**:
+
+```bash
+python3 locker unlock -p ~/Documents
+```
+
+📂 **Check if a directory is locked**:
+
+```bash
+python3 locker status -p ~/Documents
+```
+
+📄 **Lock a directory without encryption (permission-based only)**:
+
+```bash
+python3 locker lock -p ~/Documents --skip-enc
+```
+
+🔐 **Batch lock multiple directories using an index file**:
+
+```bash
+echo "/home/user/Documents" > ~/index.locker
+echo "/home/user/Downloads" >> ~/index.locker
+python3 locker lock -i ~/index.locker
+```
+
+---
+
+**Security & Encryption Details**
+
+- Uses **AES-256 encryption** via OpenSSL.
+- Supports **PBKDF2 key derivation** with 100,000 iterations.
+- Uses **PAM authentication** for access control.
+- Implements **process-based file locking** to prevent simultaneous access.
+
+---
+
+**Troubleshooting**
+
+❌ **Error: "Required binary 'openssl' is missing."**  
+🔹 Solution: Install OpenSSL.
+
+```bash
+sudo apt install openssl  # Debian-based
+sudo pacman -S openssl    # Arch-based
+```
+
+❌ **Error: "Authentication failed after 3 attempts."**  
+🔹 Solution: Ensure you enter the correct system password. If PAM is misconfigured, try `--skip-auth` (not recommended for secure environments).
+
+❌ **Error: "Failed to remove <path>"**  
+🔹 Solution: The file might be **locked by another process**. Ensure no other instance is running.
 
 ---
 

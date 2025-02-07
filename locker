@@ -1,8 +1,57 @@
 #!/usr/bin/env python3
 """
+LXA Super Secure Folder Locker
+
+Description:
+This script provides a secure way to lock, unlock, and check the status of files or directories. 
+It encrypts the contents using OpenSSL, ensures access control with PAM authentication, 
+and prevents unauthorized access using strict permissions.
+
+Features:
+- Lock and encrypt a file or directory.
+- Unlock and decrypt an encrypted file or directory.
+- Check the status of a locked/unlocked file or directory.
+- Uses `tar` for archiving and `openssl` for AES-256 encryption.
+- Supports PAM-based authentication before unlocking (unless skipped).
+- Prevents concurrent access with file-based locking mechanisms.
+- Provides verbose logging for debugging and monitoring.
+
 Requirements:
-- pam (sudo pacman -S python-pam)
+- Python 3.x
+- pam (install using: `sudo pacman -S python-pam` or `pip install python-pam`)
 - tar
+- OpenSSL
+
+Usage:
+  Lock a directory:
+      python3 locker lock -p /path/to/directory
+
+  Unlock a directory:
+      python3 locker unlock -p /path/to/directory
+
+  Check status of a directory:
+      python3 locker status -p /path/to/directory
+
+  Lock multiple directories using an index file:
+      python3 locker lock -i /path/to/index.locker
+
+Arguments:
+  -p, --path      Path to the file or directory to lock/unlock.
+  -i, --index     Path to an index file containing multiple paths to lock/unlock.
+  -V, --verbose   Enable verbose output (logs to stdout and stderr).
+  --skip-auth     Skip user authentication.
+  --skip-enc      Skip encryption.
+  --password      Password to use for encryption (if not provided, it will prompt).
+
+Author:  
+  - Pankaj Jackson <pankajackson@live.co.uk>
+
+Version:
+  - 1.0.0
+
+License:
+  - MIT License
+
 """
 import os, subprocess, stat
 import pam
