@@ -68,7 +68,7 @@ import shutil
 REQUIRED_BINARIES = ["tar", "openssl"]
 DEFAULT_PASSWORD = "123"
 APP_DIR = Path.home() / ".config/lxa_locker"
-
+IGNORE_PATH_LIST = [".", ".."]
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -454,9 +454,10 @@ def main() -> None:
         else:
             with open(path_index, "r") as f:
                 path_list = {
-                    Path(line.strip())
+                    Path(line.strip().split("#")[0].strip())
                     for line in f.readlines()
-                    if not line.startswith("#")
+                    if line.strip().split("#")[0].strip()
+                    and line.strip().split("#")[0].strip() not in IGNORE_PATH_LIST
                 }
 
     for path in path_list:
