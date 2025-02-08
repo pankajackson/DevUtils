@@ -117,8 +117,8 @@ class Locker:
         self.skip_auth = skip_auth
         self.skip_enc = skip_enc
         self.path = path.absolute()
-        self.tar_path = self.path.parent / f".{self.path.name}.tar"
-        self.encrypted_tar_path = self.tar_path.with_suffix(".enc")
+        self.tar_path = self.path.parent / f".{self.path.name}.lxaldb"
+        self.encrypted_tar_path = self.tar_path.with_suffix(".lxalc")
         self.password = password
         self.verbose = verbose
 
