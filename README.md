@@ -369,6 +369,38 @@ A CLI tool written in Python for managing Docker Swarm clusters. It helps automa
 ./swarmer.py status
 ```
 
+**Bonus Network Tip**:
+
+To create an overlay network that is **attachable** (can be used by both Swarm and non-Swarm containers), and **automatically available to all nodes (including workers)**, follow this approach:
+
+```bash
+docker network create \
+  --driver=overlay \
+  --attachable \
+  --scope swarm \
+  --subnet=10.10.0.0/16 \
+  --gateway=10.10.0.1 \
+  lxa-swarm-bridge
+```
+
+By default, Swarm overlay networks are only visible to nodes that have services scheduled on them. To **force Swarm to propagate the network to all nodes (including idle workers)**, deploy a `global` dummy service that attaches to the network:
+
+```bash
+docker service create \
+  --name net-prober \
+  --network lxa-swarm-bridge \
+  --mode global \
+  alpine sleep infinity
+```
+
+This ensures the `lxa-swarm-bridge` network gets instantiated on **every Swarm node**, making it usable for:
+
+- Swarm services
+- Standalone containers (`docker run`) using `--network lxa-swarm-bridge`
+- Easier debugging and cross-node communication
+
+You can remove the `net-prober` service anytime after deploying your workloads.
+
 **Security Notes**:
 
 - SSH key or password required to fetch tokens
@@ -384,8 +416,8 @@ To add a new utility:
 1. Place your script in the appropriate subdirectory (e.g., `python/`, `bash/`, `typescript/`).
 2. Update the `README.md`:
 
-- Add a new subsection under **Available Utilities** with details about your script.
-- Include dependencies, usage instructions, and examples.
+   - Add a new subsection under **Available Utilities** with details about your script.
+   - Include dependencies, usage instructions, and examples.
 
 3. Commit your changes and create a pull request if contributing.
 
