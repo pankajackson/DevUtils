@@ -43,10 +43,10 @@ Notes:
 - Uses ControlMaster for SSH connection reuse (via a temp socket)
 
 Author:
-    Pankaj Jackson (or your name)
+    - Pankaj Jackson <pankajackson@live.co.uk>
 
 License:
-    MIT License (or any appropriate license)
+    - MIT License
 """
 
 import os
