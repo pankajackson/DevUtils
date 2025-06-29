@@ -182,28 +182,39 @@ def prompt_for_ip():
 
 @handle_errors(action_description="Installing Docker")
 def install_docker():
+    # Check if Docker is already installed
+    if shutil.which("docker"):
+        print("[INFO] Docker is already installed. Skipping installation.")
+        return
+
+    # Detect Linux distribution
     if shutil.which("apt-get"):
         distro = "debian"
     elif shutil.which("pacman"):
         distro = "arch"
     else:
         print("[ERROR] Unsupported Linux distribution.")
-        exit(1)
+        sys.exit(1)
 
     print(f"[INFO] Detected distribution: {distro}")
+    print("[INFO] Installing Docker...")
 
+    # Install Docker
     if distro == "debian":
         subprocess.run(["sudo", "apt-get", "update", "-qq"], check=True)
         subprocess.run(["sudo", "apt-get", "install", "-y", "docker.io"], check=True)
     elif distro == "arch":
         subprocess.run(["sudo", "pacman", "-Sy", "--noconfirm", "docker"], check=True)
 
+    # Enable and start Docker service
     subprocess.run(["sudo", "systemctl", "enable", "--now", "docker"], check=True)
 
+    # Add user to Docker group
     user = getpass.getuser()
     print(f"[INFO] Adding user '{user}' to docker group...")
     subprocess.run(["sudo", "usermod", "-aG", "docker", user], check=True)
 
+    print("[INFO] Docker installation complete.")
     print("[INFO] Please log out and log back in for group changes to take effect.")
 
 
