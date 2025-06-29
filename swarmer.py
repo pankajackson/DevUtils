@@ -1,0 +1,357 @@
+#!/usr/bin/env python3
+"""
+Swarmer - Docker Swarm Manager CLI
+----------------------------------
+
+A CLI tool to initialize, join, and manage a Docker Swarm cluster across Vagrant VMs or other Linux hosts.
+
+Features:
+- Automatically installs required packages (`docker.io`, `python3-psutil`, `sshpass`)
+- Initializes a Docker Swarm on a master node
+- Allows nodes to join the swarm as workers or managers
+- Supports SSH login via password or private key
+- Promotes nodes to manager role
+- Leaves the swarm and optionally prunes Docker state
+- Provides status output of the Swarm cluster
+
+Usage:
+    ./swarmer.py init [<advertise_ip>]
+    ./swarmer.py join <manager_ip> [--role manager|worker] [--master-ssh-user USER] [--master-ssh-password PASS] [--master-ssh-private-key PATH]
+    ./swarmer.py promote <hostname>
+    ./swarmer.py leave [--force] [--wipe]
+    ./swarmer.py status
+
+Arguments:
+    init                     Initialize the Swarm on the current machine
+    join                     Join the machine to a swarm controlled by a manager IP
+    promote                  Promote a swarm node to manager role
+    leave                    Leave the swarm (optionally force and wipe all Docker data)
+    status                   Show Docker Swarm cluster status
+
+Requirements:
+- Python 3.6+
+- Runs on Debian/Ubuntu or Arch Linux
+- Will auto-install:
+    - docker.io
+    - python3-psutil (dynamically imported)
+    - sshpass (if password-based SSH is used)
+
+Notes:
+- SSH user defaults to the current shell user or $SWARMER_SSH_USER
+- `sshpass` is required if a password is provided instead of a key
+- Automatically adds the current user to the `docker` group
+- Uses ControlMaster for SSH connection reuse (via a temp socket)
+
+Author:
+    - Pankaj Jackson <pankajackson@live.co.uk>
+
+License:
+    - MIT License
+"""
+
+import os
+import sys
+import subprocess
+import argparse
+import getpass
+import threading
+import time
+import tempfile
+import functools
+import socket
+import shutil
+import types
+
+psutil: types.ModuleType  # will be imported after ensure_dependencies()
+
+
+def handle_errors(action_description="running command"):
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            try:
+                return func(*args, **kwargs)
+            except subprocess.CalledProcessError as e:
+                print(f"\n[ERROR] Failed while {action_description}:")
+                print(f"[COMMAND] {' '.join(e.cmd)}")
+                if e.stderr:
+                    print(f"[STDERR] {e.stderr.strip()}")
+                elif e.output:
+                    print(f"[OUTPUT] {e.output.strip()}")
+                else:
+                    print("[ERROR] An unknown error occurred.")
+                sys.exit(1)
+            except FileNotFoundError as e:
+                print(f"\n[ERROR] Command not found: {e}")
+                sys.exit(1)
+
+        return wrapper
+
+    return decorator
+
+
+@handle_errors(action_description="Requesting sudo access")
+def require_sudo():
+    print("[INFO] Requesting sudo access...")
+    subprocess.run(["sudo", "-v"], check=True)
+
+
+@handle_errors(action_description="Keeping sudo alive")
+def keep_sudo_alive():
+    def refresher():
+        while True:
+            try:
+                subprocess.run(["sudo", "-n", "-v"], stderr=subprocess.DEVNULL)
+            except Exception:
+                pass
+            time.sleep(60)
+
+    thread = threading.Thread(target=refresher, daemon=True)
+    thread.start()
+
+
+@handle_errors(action_description="Ensuring required packages are installed")
+def ensure_dependencies():
+    required_packages = ["python3-psutil", "sshpass"]
+    missing = []
+
+    if shutil.which("apt-get"):
+        pkg_mgr = "apt"
+        check_installed = (
+            lambda pkg: subprocess.call(
+                ["dpkg", "-s", pkg],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            == 0
+        )
+        install_cmd = ["sudo", "apt-get", "install", "-y"]
+    elif shutil.which("pacman"):
+        pkg_mgr = "pacman"
+        check_installed = (
+            lambda pkg: subprocess.call(
+                ["pacman", "-Qi", pkg],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            == 0
+        )
+        install_cmd = ["sudo", "pacman", "-Sy", "--noconfirm"]
+    else:
+        print("[ERROR] Unsupported Linux distribution.")
+        sys.exit(1)
+
+    for pkg in required_packages:
+        if not check_installed(pkg):
+            missing.append(pkg)
+
+    if missing:
+        print(f"[INFO] Installing missing packages via {pkg_mgr}: {' '.join(missing)}")
+        subprocess.run(install_cmd + missing, check=True)
+
+    # Now import psutil
+    global psutil
+    psutil = __import__("psutil")
+
+
+def get_available_ips():
+    ip_list = []
+    for iface, addrs in psutil.net_if_addrs().items():
+        for addr in addrs:
+            if addr.family == socket.AF_INET and not addr.address.startswith("127."):
+                ip_list.append((iface, addr.address))
+    return ip_list
+
+
+def prompt_for_ip():
+    ip_options = get_available_ips()
+    if not ip_options:
+        print("[ERROR] No usable IP addresses found.")
+        sys.exit(1)
+
+    print("\n[?] Select an IP to advertise:")
+    for i, (iface, ip) in enumerate(ip_options, 1):
+        print(f"{i}. {iface:<8} {ip}")
+
+    while True:
+        choice = input("Enter the number of the IP to use: ").strip()
+        if choice.isdigit() and 1 <= int(choice) <= len(ip_options):
+            return ip_options[int(choice) - 1][1]
+        print("[!] Invalid choice. Please enter a valid number.")
+
+
+@handle_errors(action_description="Installing Docker")
+def install_docker():
+    if shutil.which("apt-get"):
+        distro = "debian"
+    elif shutil.which("pacman"):
+        distro = "arch"
+    else:
+        print("[ERROR] Unsupported Linux distribution.")
+        exit(1)
+
+    print(f"[INFO] Detected distribution: {distro}")
+
+    if distro == "debian":
+        subprocess.run(["sudo", "apt-get", "update", "-qq"], check=True)
+        subprocess.run(["sudo", "apt-get", "install", "-y", "docker.io"], check=True)
+    elif distro == "arch":
+        subprocess.run(["sudo", "pacman", "-Sy", "--noconfirm", "docker"], check=True)
+
+    subprocess.run(["sudo", "systemctl", "enable", "--now", "docker"], check=True)
+
+    user = getpass.getuser()
+    print(f"[INFO] Adding user '{user}' to docker group...")
+    subprocess.run(["sudo", "usermod", "-aG", "docker", user], check=True)
+
+    print("[INFO] Please log out and log back in for group changes to take effect.")
+
+
+@handle_errors(action_description="Initializing Docker Swarm")
+def init_swarm(advertise_ip):
+    install_docker()
+    subprocess.run(
+        ["sudo", "docker", "swarm", "init", "--advertise-addr", advertise_ip],
+        check=True,
+    )
+    print("[INFO] Swarm initialized.")
+
+
+@handle_errors(action_description="Getting Joining Token")
+def get_join_token(manager_ip, role, ssh_user, private_key=None, password=None):
+    control_socket = os.path.join(tempfile.gettempdir(), f"swarmer_{manager_ip}.sock")
+
+    ssh_opts = []
+    if password:
+        ssh_opts = ["sshpass", "-p", password]
+
+    ssh_opts += [
+        "ssh",
+        "-o",
+        "StrictHostKeyChecking=no",
+        "-o",
+        "UserKnownHostsFile=/dev/null",
+        "-o",
+        "ControlMaster=auto",
+        "-o",
+        f"ControlPath={control_socket}",
+        "-o",
+        "ControlPersist=300",
+    ]
+
+    if private_key:
+        ssh_opts.extend(["-i", private_key])
+
+    ssh_opts.append(f"{ssh_user}@{manager_ip}")
+
+    print(f"[INFO] Connecting to {ssh_user}@{manager_ip} via SSH...")
+    return subprocess.check_output(
+        ssh_opts + [f"docker swarm join-token -q {role}"],
+        text=True,
+    ).strip()
+
+
+@handle_errors(action_description="Joining Docker Swarm")
+def join_swarm(manager_ip, role, ssh_user, private_key=None, password=None):
+    install_docker()
+    token = get_join_token(manager_ip, role, ssh_user, private_key, password)
+    subprocess.run(
+        ["sudo", "docker", "swarm", "join", "--token", token, f"{manager_ip}:2377"],
+        check=True,
+    )
+    print(f"[INFO] Joined the swarm as a {role}.")
+
+
+@handle_errors(action_description="Promoting Swarm Node")
+def promote_node(hostname):
+    subprocess.run(["sudo", "docker", "node", "promote", hostname], check=True)
+    print(f"[INFO] Node '{hostname}' promoted to manager.")
+
+
+@handle_errors(action_description="Leaving Docker Swarm")
+def leave_swarm(force=False, wipe=False):
+    cmd = ["sudo", "docker", "swarm", "leave"]
+    if force:
+        cmd.append("--force")
+
+    print("[INFO] Leaving swarm...")
+    subprocess.run(cmd, check=True)
+
+    if wipe:
+        print("[INFO] Wiping Docker state (containers, images, volumes, networks)...")
+        subprocess.run(
+            ["sudo", "docker", "system", "prune", "-a", "--volumes", "-f"], check=True
+        )
+        print("[INFO] Docker reset complete.")
+
+
+@handle_errors(action_description="Checking Swarm Status")
+def status():
+    print("[INFO] Swarm status:")
+    subprocess.run(["sudo", "docker", "info"], check=False)
+    subprocess.run(["sudo", "docker", "node", "ls"], check=False)
+
+
+def main():
+    require_sudo()
+    keep_sudo_alive()
+    ensure_dependencies()  # auto-install psutil + sshpass
+
+    parser = argparse.ArgumentParser(description="Swarmer - Docker Swarm manager CLI")
+    subparsers = parser.add_subparsers(dest="command")
+
+    # init
+    p_init = subparsers.add_parser("init", help="Initialize swarm")
+    p_init.add_argument("advertise_ip", nargs="?", help="IP to advertise")
+
+    # join
+    p_join = subparsers.add_parser("join", help="Join swarm")
+    p_join.add_argument("manager_ip", help="Manager node IP")
+    p_join.add_argument(
+        "--role", default="worker", choices=["worker", "manager"], help="Node role"
+    )
+    p_join.add_argument("--master-ssh-user", help="SSH user for manager node")
+    p_join.add_argument("--master-ssh-password", help="SSH password for manager node")
+    p_join.add_argument(
+        "--master-ssh-private-key", help="SSH private key path for manager node"
+    )
+
+    # promote
+    p_promote = subparsers.add_parser("promote", help="Promote node to manager")
+    p_promote.add_argument("hostname", help="Hostname of node to promote")
+
+    # leave
+    p_leave = subparsers.add_parser("leave", help="Leave swarm")
+    p_leave.add_argument("--force", action="store_true", help="Force leave")
+    p_leave.add_argument("--wipe", action="store_true", help="Remove all Docker state")
+
+    subparsers.add_parser("status", help="Show swarm status")
+
+    args = parser.parse_args()
+
+    if args.command == "init":
+        ip = args.advertise_ip or prompt_for_ip()
+        init_swarm(ip)
+    elif args.command == "join":
+        ssh_user = (
+            args.master_ssh_user or os.getenv("SWARMER_SSH_USER") or getpass.getuser()
+        )
+        join_swarm(
+            args.manager_ip,
+            args.role,
+            ssh_user,
+            args.master_ssh_private_key,
+            args.master_ssh_password,
+        )
+    elif args.command == "promote":
+        promote_node(args.hostname)
+    elif args.command == "leave":
+        leave_swarm(force=args.force, wipe=args.wipe)
+    elif args.command == "status":
+        status()
+    else:
+        parser.print_help()
+
+
+if __name__ == "__main__":
+    main()

@@ -12,6 +12,7 @@
     - [2. Camera Device Manager](#2-camera-device-manager)
     - [3. Repository Migration Tool](#3-repository-migration-tool)
     - [4. LXA Super Secure Folder Locker](#4-lxa-super-secure-folder-locker)
+    - [5. Docker Swarm Manager (Swarmer)](#5-docker-swarm-manager-swarmer)
   - [Adding New Utilities](#adding-new-utilities)
   - [Contributing](#contributing)
   - [License](#license)
@@ -204,8 +205,6 @@ LXA Super Secure Folder Locker is a Python-based utility that securely locks and
 - `pam` (install using `sudo pacman -S python-pam` or `pip install python-pam`)
 - `tar` (for compressing directories before encryption)
 
----
-
 **Usage**
 
 1. Navigate to the script directory:
@@ -228,8 +227,6 @@ LXA Super Secure Folder Locker is a Python-based utility that securely locks and
 | `status` | Check if a file/directory is locked or unlocked | `python3 locker status -p ~/Documents` |
 | `lock (batch mode)` | Lock multiple directories using an index file | `python3 locker lock -i ~/index.locker` |
 
----
-
 **Options**
 
 | Option          | Description                                       | Example                   |
@@ -240,8 +237,6 @@ LXA Super Secure Folder Locker is a Python-based utility that securely locks and
 | `--skip-auth`   | Skip user authentication (useful for automation). | `--skip-auth`             |
 | `--skip-enc`    | Skip encryption (locks using permissions only).   | `--skip-enc`              |
 | `--password`    | Provide a password for encryption/decryption.     | `--password mysecurepass` |
-
----
 
 **Examples**
 
@@ -277,16 +272,12 @@ echo "/home/user/Downloads" >> ~/index.locker
 python3 locker lock -i ~/index.locker
 ```
 
----
-
 **Security & Encryption Details**
 
 - Uses **AES-256 encryption** via OpenSSL.
 - Supports **PBKDF2 key derivation** with 100,000 iterations.
 - Uses **PAM authentication** for access control.
 - Implements **process-based file locking** to prevent simultaneous access.
-
----
 
 **Troubleshooting**
 
@@ -303,6 +294,86 @@ sudo pacman -S openssl    # Arch-based
 
 ❌ **Error: "Failed to remove <path>"**  
 🔹 Solution: The file might be **locked by another process**. Ensure no other instance is running.
+
+---
+
+### 5. Docker Swarm Manager (Swarmer)
+
+**Description**:  
+A CLI tool written in Python for managing Docker Swarm clusters. It helps automate swarm setup and node management across Vagrant-based or physical Linux machines.
+
+**Features**:
+
+- Auto-installs required packages: `docker.io`, `python3-psutil`, `sshpass`
+- Initializes a swarm with `docker swarm init`
+- Allows joining as worker or manager using SSH and token fetching
+- Promotes nodes to manager
+- Leaves and optionally wipes Docker state
+- Displays Docker swarm status
+- Uses PAM user detection and supports SSH with password or private key
+- Dynamically loads dependencies like `psutil`
+
+**Dependencies**:
+
+- Python 3.6+
+- `docker.io` (or `docker` package)
+- `sshpass`
+- `python3-psutil`
+- Supported OS: Debian/Ubuntu or Arch Linux
+
+**Usage**:
+
+```bash
+./swarmer.py init <advertise_ip>
+./swarmer.py join <manager_ip> [--role manager|worker] [--master-ssh-user USER] [--master-ssh-password PASS] [--master-ssh-private-key PATH]
+./swarmer.py promote <hostname>
+./swarmer.py leave [--force] [--wipe]
+./swarmer.py status
+```
+
+**Examples**:
+
+🟢 Initialize a Swarm:
+
+```bash
+./swarmer.py init 192.168.56.100
+```
+
+🔗 Join a Swarm as a worker:
+
+```bash
+./swarmer.py join 192.168.56.100 --role worker --master-ssh-user vagrant --master-ssh-private-key ~/.ssh/id_rsa
+```
+
+🔐 Join using password:
+
+```bash
+./swarmer.py join 192.168.56.100 --master-ssh-user vagrant --master-ssh-password vagrant
+```
+
+🚀 Promote a node to manager:
+
+```bash
+./swarmer.py promote swarm-worker1
+```
+
+🚪 Leave and wipe all Docker data:
+
+```bash
+./swarmer.py leave --force --wipe
+```
+
+📋 Check swarm status:
+
+```bash
+./swarmer.py status
+```
+
+**Security Notes**:
+
+- SSH key or password required to fetch tokens
+- Auto adds the invoking user to the `docker` group
+- Uses a control socket (`ControlPath`) to reuse SSH connections
 
 ---
 
