@@ -87,11 +87,14 @@ def get_args():
         help="Protocol [tcp/udp], default: tcp",
     )
     parser.add_argument(
-        "--remove", action="store_true", help="Remove rule (default is to prompt)"
+        "--remove", action="store_true", help="Remove traffic forwarding rule"
     )
-
-    args = parser.parse_args()
-    return args
+    parser.add_argument(
+        "--non-interactive",
+        action="store_true",
+        help="Exit on missing input or invalid values instead of prompting",
+    )
+    return parser.parse_args()
 
 
 def main():
@@ -102,25 +105,35 @@ def main():
         print("[ERROR] No usable IPs found on this machine.")
         sys.exit(1)
 
+    ip_map = dict(all_ips)
     default_index = choose_default_index(all_ips)
 
     # WAN IP
-    if args.wan_ip and args.wan_ip in dict(all_ips):
-        wan_ip = args.wan_ip
-        iface = dict(all_ips)[wan_ip]
-    elif args.wan_ip:
-        print(f"[ERROR] Provided WAN IP {args.wan_ip} is not assigned to this machine.")
+    if args.wan_ip:
+        if args.wan_ip in ip_map:
+            wan_ip = args.wan_ip
+            iface = ip_map[wan_ip]
+        else:
+            print(
+                f"[ERROR] Provided WAN IP {args.wan_ip} is not assigned to this machine."
+            )
+            sys.exit(1)
+    elif args.non_interactive:
+        print("[ERROR] --wan-ip is required in non-interactive mode.")
         sys.exit(1)
     else:
         wan_ip, iface = prompt_ip_choice(all_ips, default_index)
 
     # Destination IP
-    dest_ip = (
-        args.dest_ip
-        or input(
+    dest_ip = args.dest_ip
+    if not dest_ip:
+        if args.non_interactive:
+            print("[ERROR] --dest-ip is required in non-interactive mode.")
+            sys.exit(1)
+        dest_ip = input(
             "[INFO] Enter destination IP for outgoing traffic (10.11.0.200): "
         ).strip()
-    )
+
     try:
         ipaddress.ip_address(dest_ip)
     except ValueError:
@@ -128,33 +141,35 @@ def main():
         sys.exit(1)
 
     # Source Port
-    sport = (
-        args.sport or input("[INFO] Enter source port for incoming traffic: ").strip()
-    )
+    sport = args.sport
+    if not sport:
+        if args.non_interactive:
+            print("[ERROR] --sport is required in non-interactive mode.")
+            sys.exit(1)
+        sport = input("[INFO] Enter source port for incoming traffic: ").strip()
+
     if not sport.isdigit():
         print("[ERROR] Source port must be numeric.")
         sys.exit(1)
 
     # Destination Port
-    dport = (
-        args.dport
-        or input(
-            f"[INFO] Enter destination port for outgoing traffic [{sport}]: "
-        ).strip()
-        or sport
-    )
+    dport = args.dport
+    if not dport:
+        if args.non_interactive:
+            dport = sport
+        else:
+            dport = (
+                input(
+                    f"[INFO] Enter destination port for outgoing traffic [{sport}]: "
+                ).strip()
+                or sport
+            )
     if not dport.isdigit():
         print("[ERROR] Destination port must be numeric.")
         sys.exit(1)
 
     # Protocol
-    proto = (
-        args.proto
-        or input("[INFO] Enter protocol for traffic forwarding (tcp/udp) [tcp]: ")
-        .strip()
-        .lower()
-        or "tcp"
-    )
+    proto = args.proto or "tcp"
     if proto not in ["tcp", "udp"]:
         print("[ERROR] Protocol must be tcp or udp.")
         sys.exit(1)
@@ -165,6 +180,7 @@ def main():
     rule_nat = f"PREROUTING -d {wan_ip} -p {proto} --dport {sport} -j DNAT --to-destination {dest_ip}:{dport}"
     rule_fwd = f"FORWARD -p {proto} -d {dest_ip} --dport {dport} -j ACCEPT"
 
+    # Apply or Remove
     if enable:
         add_iptables_rule("nat", rule_nat)
         add_iptables_rule("filter", rule_fwd)
