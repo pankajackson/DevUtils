@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import argparse
 import subprocess
 import ipaddress
 import netifaces
@@ -8,7 +9,6 @@ import re
 
 
 def get_all_local_ips():
-    """Get all IPv4 addresses mapped to their interface names"""
     ips = []
     for iface in netifaces.interfaces():
         addrs = netifaces.ifaddresses(iface)
@@ -20,7 +20,6 @@ def get_all_local_ips():
 
 
 def choose_default_index(ips):
-    """Pick a default IP index based on interface priority"""
     for i, (_, iface) in enumerate(ips):
         if re.match(r"^en|^eth", iface):
             return i
@@ -35,7 +34,6 @@ def prompt_ip_choice(ips, default_index):
     for i, (ip, iface) in enumerate(ips):
         default_tag = " (default)" if i == default_index else ""
         print(f"  [{i}] {ip:<15} => {iface}{default_tag}")
-
     while True:
         try:
             choice = input(f"\nChoose WAN IP by index [{default_index}]: ").strip()
@@ -74,43 +72,95 @@ def remove_iptables_rule(table, rule):
         print(f"[!] Rule does not exist: {rule}")
 
 
+def get_args():
+    parser = argparse.ArgumentParser(
+        description="Traffic forwarding rule manager with iptables"
+    )
+    parser.add_argument("--wan-ip", help="IP to match for incoming traffic")
+    parser.add_argument("--dest-ip", help="Destination IP to forward traffic to")
+    parser.add_argument("--sport", help="Source (incoming) port")
+    parser.add_argument("--dport", help="Destination port (defaults to source port)")
+    parser.add_argument(
+        "--proto",
+        default="tcp",
+        choices=["tcp", "udp"],
+        help="Protocol [tcp/udp], default: tcp",
+    )
+    parser.add_argument(
+        "--remove", action="store_true", help="Remove rule (default is to prompt)"
+    )
+
+    args = parser.parse_args()
+    return args
+
+
 def main():
+    args = get_args()
+
     all_ips = get_all_local_ips()
     if not all_ips:
         print("[ERROR] No usable IPs found on this machine.")
         sys.exit(1)
 
     default_index = choose_default_index(all_ips)
-    wan_ip, iface = prompt_ip_choice(all_ips, default_index)
 
-    dest_ip = input(
-        "[INFO] Enter destination IP for outgoing traffic (10.11.0.200): "
-    ).strip()
+    # WAN IP
+    if args.wan_ip and args.wan_ip in dict(all_ips):
+        wan_ip = args.wan_ip
+        iface = dict(all_ips)[wan_ip]
+    elif args.wan_ip:
+        print(f"[ERROR] Provided WAN IP {args.wan_ip} is not assigned to this machine.")
+        sys.exit(1)
+    else:
+        wan_ip, iface = prompt_ip_choice(all_ips, default_index)
+
+    # Destination IP
+    dest_ip = (
+        args.dest_ip
+        or input(
+            "[INFO] Enter destination IP for outgoing traffic (10.11.0.200): "
+        ).strip()
+    )
     try:
         ipaddress.ip_address(dest_ip)
     except ValueError:
         print("[ERROR] Invalid destination IP")
         sys.exit(1)
 
-    sport = input("[INFO] Enter source port for incoming traffic: ").strip()
+    # Source Port
+    sport = (
+        args.sport or input("[INFO] Enter source port for incoming traffic: ").strip()
+    )
     if not sport.isdigit():
         print("[ERROR] Source port must be numeric.")
         sys.exit(1)
 
+    # Destination Port
     dport = (
-        input(f"[INFO] Enter destination port for outgoing traffic [{sport}]: ").strip()
+        args.dport
+        or input(
+            f"[INFO] Enter destination port for outgoing traffic [{sport}]: "
+        ).strip()
         or sport
     )
     if not dport.isdigit():
         print("[ERROR] Destination port must be numeric.")
         sys.exit(1)
 
-    proto = input("[INFO] Enter protocol for traffic forwarding (tcp/udp) [tcp]: ").strip().lower() or "tcp"
+    # Protocol
+    proto = (
+        args.proto
+        or input("[INFO] Enter protocol for traffic forwarding (tcp/udp) [tcp]: ")
+        .strip()
+        .lower()
+        or "tcp"
+    )
     if proto not in ["tcp", "udp"]:
         print("[ERROR] Protocol must be tcp or udp.")
         sys.exit(1)
 
-    enable = (input("[INFO] Apply traffic forwarding rule now? [y/N] [y]: ").strip().lower() or "y") == "y"
+    # Confirm apply
+    enable = not args.remove
 
     rule_nat = f"PREROUTING -d {wan_ip} -p {proto} --dport {sport} -j DNAT --to-destination {dest_ip}:{dport}"
     rule_fwd = f"FORWARD -p {proto} -d {dest_ip} --dport {dport} -j ACCEPT"
