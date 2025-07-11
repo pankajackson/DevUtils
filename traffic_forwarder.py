@@ -1,31 +1,51 @@
 #!/usr/bin/env python3
 
 import subprocess
-import socket
 import ipaddress
 import netifaces
 import sys
+import re
 
 
 def get_all_local_ips():
-    ips = {}
+    """Get all IPv4 addresses mapped to their interface names"""
+    ips = []
     for iface in netifaces.interfaces():
         addrs = netifaces.ifaddresses(iface)
         inet_addrs = addrs.get(netifaces.AF_INET, [])
         for addr in inet_addrs:
             ip = addr["addr"]
-            ips[ip] = iface
+            ips.append((ip, iface))
     return ips
 
 
-def get_default_interface():
-    try:
-        gw = netifaces.gateways().get("default")
-        if gw and netifaces.AF_INET in gw:
-            return gw[netifaces.AF_INET][1]
-    except Exception:
-        pass
-    return None
+def choose_default_index(ips):
+    """Pick a default IP index based on interface priority"""
+    for i, (_, iface) in enumerate(ips):
+        if re.match(r"^en|^eth", iface):
+            return i
+    for i, (_, iface) in enumerate(ips):
+        if re.match(r"^wl", iface):
+            return i
+    return 0
+
+
+def prompt_ip_choice(ips, default_index):
+    print("\n[INFO] Choose interface and IP for incoming traffic:")
+    for i, (ip, iface) in enumerate(ips):
+        default_tag = " (default)" if i == default_index else ""
+        print(f"  [{i}] {ip:<15} => {iface}{default_tag}")
+
+    while True:
+        try:
+            choice = input(f"\nChoose WAN IP by index [{default_index}]: ").strip()
+            choice = int(choice) if choice else default_index
+            if 0 <= choice < len(ips):
+                return ips[choice]
+            else:
+                print(f"[ERROR] Please enter a valid number between 0 and {len(ips)-1}")
+        except ValueError:
+            print("[ERROR] Please enter a valid number")
 
 
 def iptables_rule_exists(table, rule):
@@ -56,44 +76,41 @@ def remove_iptables_rule(table, rule):
 
 def main():
     all_ips = get_all_local_ips()
-    default_iface = get_default_interface()
-
-    print("\n[INFO] Available Interfaces and IPs:")
-    for ip, iface in all_ips.items():
-        print(f"  {ip:<15}  =>  {iface}")
-
-    wan_ip = (
-        input(f"\nEnter WAN (external-facing) IP [{list(all_ips.keys())[0]}]: ").strip()
-        or list(all_ips.keys())[0]
-    )
-    if wan_ip not in all_ips:
-        print("[ERROR] Invalid WAN IP. Choose from the list above.")
+    if not all_ips:
+        print("[ERROR] No usable IPs found on this machine.")
         sys.exit(1)
 
-    iface = all_ips[wan_ip]
-    dest_ip = input("Enter destination internal IP (e.g., 10.0.0.100): ").strip()
+    default_index = choose_default_index(all_ips)
+    wan_ip, iface = prompt_ip_choice(all_ips, default_index)
+
+    dest_ip = input(
+        "[INFO] Enter destination IP for outgoing traffic [10.11.0.200]: "
+    ).strip()
     try:
         ipaddress.ip_address(dest_ip)
     except ValueError:
         print("[ERROR] Invalid destination IP")
         sys.exit(1)
 
-    sport = input("Enter source (external) port: ").strip()
+    sport = input("[INFO] Enter source port for incoming traffic: ").strip()
     if not sport.isdigit():
         print("[ERROR] Source port must be numeric.")
         sys.exit(1)
 
-    dport = input(f"Enter destination port [{sport}]: ").strip() or sport
+    dport = (
+        input(f"[INFO] Enter destination port for outgoing traffic [{sport}]: ").strip()
+        or sport
+    )
     if not dport.isdigit():
         print("[ERROR] Destination port must be numeric.")
         sys.exit(1)
 
-    proto = input("Protocol [tcp/udp]: ").strip().lower() or "tcp"
+    proto = input("[INFO] Enter protocol for traffic forwarding [tcp/udp] (default: tcp): ").strip().lower() or "tcp"
     if proto not in ["tcp", "udp"]:
         print("[ERROR] Protocol must be tcp or udp.")
         sys.exit(1)
 
-    enable = (input("Enable forwarding? [y/N]: ").strip().lower() or "y") == "y"
+    enable = (input("[INFO] Apply traffic forwarding rule now? [y/N] (default: y): ").strip().lower() or "y") == "y"
 
     rule_nat = f"PREROUTING -d {wan_ip} -p {proto} --dport {sport} -j DNAT --to-destination {dest_ip}:{dport}"
     rule_fwd = f"FORWARD -p {proto} -d {dest_ip} --dport {dport} -j ACCEPT"
