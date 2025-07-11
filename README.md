@@ -13,6 +13,7 @@
     - [3. Repository Migration Tool](#3-repository-migration-tool)
     - [4. LXA Super Secure Folder Locker](#4-lxa-super-secure-folder-locker)
     - [5. Docker Swarm Manager (Swarmer)](#5-docker-swarm-manager-swarmer)
+    - [6. Traffic Forwarder](#6-traffic-forwarder)
   - [Adding New Utilities](#adding-new-utilities)
   - [Contributing](#contributing)
   - [License](#license)
@@ -406,6 +407,81 @@ You can remove the `net-prober` service anytime after deploying your workloads.
 - SSH key or password required to fetch tokens
 - Auto adds the invoking user to the `docker` group
 - Uses a control socket (`ControlPath`) to reuse SSH connections
+
+---
+
+### 6. Traffic Forwarder
+
+**Description**:
+A flexible Python utility for managing `iptables` traffic forwarding rules — either interactively or non-interactively (CLI). It enables developers to quickly redirect incoming traffic on a specific interface and port to another destination IP and port.
+
+**Features**:
+
+- Interactive or non-interactive (scriptable) usage
+- Validates WAN interface IP against local interfaces
+- Automatically picks sensible default IP/interface
+- Adds/removes `iptables` `PREROUTING` and `FORWARD` rules
+- Useful in container routing, NAT scenarios, and testing environments
+
+**Dependencies**:
+
+- Python 3.x
+- `netifaces` (`pip install netifaces`)
+- `iptables` (with `sudo` privileges)
+
+**Usage**:
+
+Run the script either interactively:
+
+```bash
+./traffic_forwarder
+```
+
+Or non-interactively with full arguments:
+
+```bash
+./traffic_forwarder \
+  --wan-ip 192.168.56.5 \
+  --dest-ip 10.11.0.200 \
+  --sport 443 \
+  --dport 8443 \
+  --proto tcp \
+  --non-interactive
+```
+
+**Options**:
+
+| Option              | Description                                               |
+| ------------------- | --------------------------------------------------------- |
+| `--wan-ip`          | IP on the local machine to match for incoming traffic     |
+| `--dest-ip`         | Destination IP to forward traffic to                      |
+| `--sport`           | Source port for incoming traffic                          |
+| `--dport`           | Destination port (defaults to `--sport` if not specified) |
+| `--proto`           | Protocol (`tcp` or `udp`, default: `tcp`)                 |
+| `--remove`          | Remove the rule instead of adding it                      |
+| `--non-interactive` | Disable prompts and fail on missing/invalid input         |
+
+**Examples**:
+
+➡️ Add a TCP forwarding rule:
+
+```bash
+./traffic_forwarder --wan-ip 192.168.1.5 --dest-ip 10.0.0.100 --sport 8080 --dport 80 --proto tcp --non-interactive
+```
+
+❌ Remove a forwarding rule:
+
+```bash
+./traffic_forwarder --wan-ip 192.168.1.5 --dest-ip 10.0.0.100 --sport 8080 --dport 80 --proto tcp --remove --non-interactive
+```
+
+🔄 Run interactively with prompts:
+
+```bash
+./traffic_forwarder
+```
+
+**Note**: Requires `sudo` to apply `iptables` rules.
 
 ---
 
