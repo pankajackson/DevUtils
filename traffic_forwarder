@@ -1,4 +1,29 @@
 #!/usr/bin/env python3
+# ==============================================================================
+# Script Name   : traffic_forwarder
+# Description   : Manage iptables traffic forwarding rules interactively or via CLI.
+# Author        : Pankaj Jackson
+# Version       : 1.0.0
+# License       : MIT
+# Dependencies  : Python 3.x, iptables, netifaces
+#
+# Example Usage:
+#   Interactive:
+#     ./traffic_forwarder
+#
+#   Non-interactive:
+#     ./traffic_forwarder \
+#         --wan-ip 192.168.1.5 \
+#         --dest-ip 10.11.0.200 \
+#         --sport 443 \
+#         --dport 8443 \
+#         --proto tcp \
+#         --non-interactive
+#
+# Notes:
+# - Requires sudo privileges to modify iptables rules.
+# - Automatically detects available IPs and interfaces.
+# ==============================================================================
 
 import argparse
 import subprocess
