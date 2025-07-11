@@ -84,7 +84,7 @@ def main():
     wan_ip, iface = prompt_ip_choice(all_ips, default_index)
 
     dest_ip = input(
-        "[INFO] Enter destination IP for outgoing traffic [10.11.0.200]: "
+        "[INFO] Enter destination IP for outgoing traffic (10.11.0.200): "
     ).strip()
     try:
         ipaddress.ip_address(dest_ip)
@@ -105,12 +105,12 @@ def main():
         print("[ERROR] Destination port must be numeric.")
         sys.exit(1)
 
-    proto = input("[INFO] Enter protocol for traffic forwarding [tcp/udp] (default: tcp): ").strip().lower() or "tcp"
+    proto = input("[INFO] Enter protocol for traffic forwarding (tcp/udp) [tcp]: ").strip().lower() or "tcp"
     if proto not in ["tcp", "udp"]:
         print("[ERROR] Protocol must be tcp or udp.")
         sys.exit(1)
 
-    enable = (input("[INFO] Apply traffic forwarding rule now? [y/N] (default: y): ").strip().lower() or "y") == "y"
+    enable = (input("[INFO] Apply traffic forwarding rule now? [y/N] [y]: ").strip().lower() or "y") == "y"
 
     rule_nat = f"PREROUTING -d {wan_ip} -p {proto} --dport {sport} -j DNAT --to-destination {dest_ip}:{dport}"
     rule_fwd = f"FORWARD -p {proto} -d {dest_ip} --dport {dport} -j ACCEPT"
