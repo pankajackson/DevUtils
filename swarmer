@@ -112,11 +112,9 @@ def keep_sudo_alive():
 
 @handle_errors(action_description="Ensuring required packages are installed")
 def ensure_dependencies():
-    required_packages = ["python3-psutil", "sshpass"]
-    missing = []
-
     if shutil.which("apt-get"):
         pkg_mgr = "apt"
+        required_packages = ["python3-psutil", "sshpass"]
         check_installed = (
             lambda pkg: subprocess.call(
                 ["dpkg", "-s", pkg],
@@ -128,6 +126,7 @@ def ensure_dependencies():
         install_cmd = ["sudo", "apt-get", "install", "-y"]
     elif shutil.which("pacman"):
         pkg_mgr = "pacman"
+        required_packages = ["python-psutil", "sshpass"]
         check_installed = (
             lambda pkg: subprocess.call(
                 ["pacman", "-Qi", pkg],
@@ -141,9 +140,7 @@ def ensure_dependencies():
         print("[ERROR] Unsupported Linux distribution.")
         sys.exit(1)
 
-    for pkg in required_packages:
-        if not check_installed(pkg):
-            missing.append(pkg)
+    missing = [pkg for pkg in required_packages if not check_installed(pkg)]
 
     if missing:
         print(f"[INFO] Installing missing packages via {pkg_mgr}: {' '.join(missing)}")
