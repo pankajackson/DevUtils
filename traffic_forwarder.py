@@ -58,8 +58,8 @@ def iptables_rule_exists(table, rule):
 
 def add_iptables_rule(table, rule):
     if not iptables_rule_exists(table, rule):
-        print(f"[+] Adding rule: iptables -t {table} -A {rule}")
-        subprocess.run(f"sudo iptables -t {table} -A {rule}", shell=True, check=True)
+        print(f"[+] Adding rule: iptables -t {table} -I {rule}")
+        subprocess.run(f"sudo iptables -t {table} -I {rule}", shell=True, check=True)
     else:
         print(f"[✓] Rule already exists: {rule}")
 
