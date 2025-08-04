@@ -515,8 +515,6 @@ A CLI tool to automate the setup and sharing of directories via NFS. This utilit
 **Usage**:
 
 ```bash
-chmod +x nfs_share
-nfs_share setup                     # Sets up and exports /opt/storage/nfs/public
 nfs_share /some/folder              # Exports folder to all IPs (public)
 nfs_share /some/folder *            # Same as above (explicit wildcard)
 nfs_share /some/folder 192.168.8.2  # Exports folder to specific IP
