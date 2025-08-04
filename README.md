@@ -14,6 +14,7 @@
     - [4. LXA Super Secure Folder Locker](#4-lxa-super-secure-folder-locker)
     - [5. Docker Swarm Manager (Swarmer)](#5-docker-swarm-manager-swarmer)
     - [6. Traffic Forwarder](#6-traffic-forwarder)
+    - [7. NFS Share Manager](#7-nfs-share-manager)
   - [Adding New Utilities](#adding-new-utilities)
   - [Contributing](#contributing)
   - [License](#license)
@@ -482,6 +483,89 @@ Or non-interactively with full arguments:
 ```
 
 **Note**: Requires `sudo` to apply `iptables` rules.
+
+---
+
+### 7. NFS Share Manager
+
+**Description**:
+A CLI tool to automate the setup and sharing of directories via NFS. This utility provides a simple command interface to export directories for public or restricted network access using `nfs-kernel-server`.
+
+**Features**:
+
+- Installs NFS server (`nfs-kernel-server`) if not already installed
+- Sets up and shares a default public directory (`/opt/storage/nfs/public`)
+- Allows exporting any directory to:
+
+  - All IPs (`*` / `0.0.0.0/0`)
+  - Specific subnets (e.g., `192.168.1.0/24`)
+  - Specific hosts (e.g., `192.168.1.50`)
+
+- Reloads `exportfs` and restarts NFS server automatically
+- Handles idempotency (won’t duplicate exports)
+- Works with `iptables` for access control if UFW is not available
+
+**Dependencies**:
+
+- Python 3.x
+- `nfs-kernel-server` (auto-installed)
+- `iptables` or `ufw` for firewall rules (optional)
+- Root privileges (`sudo`)
+
+**Usage**:
+
+```bash
+chmod +x nfs_share
+nfs_share setup                     # Sets up and exports /opt/storage/nfs/public
+nfs_share /some/folder              # Exports folder to all IPs (public)
+nfs_share /some/folder *            # Same as above (explicit wildcard)
+nfs_share /some/folder 192.168.8.2  # Exports folder to specific IP
+```
+
+**Examples**:
+
+🌍 **Share any folder publicly**:
+
+```bash
+nfs_share /data/shared
+```
+
+🔐 **Restrict share to a single IP**:
+
+```bash
+nfs_share /data/secure 192.168.1.25
+```
+
+📡 **Share folder to subnet**:
+
+```bash
+nfs_share /data/team 192.168.10.0/24
+```
+
+**Internals**:
+
+- Adds export rules to `/etc/exports`
+- Ensures NFS and firewall rules persist across reboots
+- Uses `exportfs -a` and `systemctl restart nfs-server` to apply changes
+- Uses `anonuid=65534, anongid=65534` for all_squash security config
+
+**View active exports**:
+
+```bash
+showmount -e localhost
+```
+
+**Check clients connected**:
+
+```bash
+sudo netstat -anp | grep :2049
+```
+
+or use:
+
+```bash
+sudo lsof -i :2049
+```
 
 ---
 
