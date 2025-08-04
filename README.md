@@ -507,9 +507,8 @@ A CLI tool to automate the setup and sharing of directories via NFS. This utilit
 
 **Dependencies**:
 
-- Python 3.x
 - `nfs-kernel-server` (auto-installed)
-- `iptables` or `ufw` for firewall rules (optional)
+- `iptables` or `ufw` for firewall rules
 - Root privileges (`sudo`)
 
 **Usage**:
