@@ -15,6 +15,7 @@
     - [5. Docker Swarm Manager (Swarmer)](#5-docker-swarm-manager-swarmer)
     - [6. Traffic Forwarder](#6-traffic-forwarder)
     - [7. NFS Share Manager](#7-nfs-share-manager)
+    - [8. SMB Share Manager (Samba)](#8-smb-share-manager-samba)
   - [Adding New Utilities](#adding-new-utilities)
   - [Contributing](#contributing)
   - [License](#license)
@@ -496,7 +497,6 @@ A CLI tool to automate the setup and sharing of directories via NFS. This utilit
 - Installs NFS server (`nfs-kernel-server`) if not already installed
 - Sets up and shares a default public directory (`/opt/storage/nfs/public`)
 - Allows exporting any directory to:
-
   - All IPs (`*` / `0.0.0.0/0`)
   - Specific subnets (e.g., `192.168.1.0/24`)
   - Specific hosts (e.g., `192.168.1.50`)
@@ -566,13 +566,114 @@ sudo lsof -i :2049
 
 ---
 
+### 8. SMB Share Manager (Samba)
+
+**Description**:  
+A CLI utility to automate the setup and management of Samba (SMB/CIFS) shares. It allows creating both public (guest) and private (user-authenticated) shares with proper permissions, user handling, and configuration updates.
+
+**Features**:
+
+- Installs Samba (`samba`, `smbclient`) automatically if not present
+- Create **public shares** (guest access enabled)
+- Create **private shares** with user authentication
+- Automatically creates system users (nologin) for SMB access
+- Supports **non-interactive password setup**
+- Retries password setup up to 3 times on failure
+- Idempotent share configuration (no duplicate entries)
+- Add users to existing shares safely
+- Automatically updates `/etc/samba/smb.conf`
+- Restarts and enables Samba service
+- Clean CLI output with connection details
+- List all configured shares
+
+**Dependencies**:
+
+- `samba`
+- `smbclient`
+- Root privileges (`sudo`)
+
+**Usage**:
+
+````bash
+smb_share /path
+smb_share /path <user>
+smb_share /path <user> <password>
+smb_share list
+smb_share ls
+
+**Examples**:
+
+🌍 **Create a public share**:
+
+```bash
+smb_share /opt/storage/public
+````
+
+🔐 **Create a private share**:
+
+```bash
+smb_share /opt/storage/private/test pankaj
+```
+
+⚡ **Create private share with password (non-interactive)**:
+
+```bash
+smb_share /opt/storage/private/test pankaj mypassword
+```
+
+📋 **List all shares**:
+
+```bash
+smb_share list
+```
+
+**Access Examples**:
+
+- Linux:
+
+  ```bash
+  smbclient //<server-ip>/share -U <user>
+  ```
+
+- Mount:
+
+  ```bash
+  sudo mount -t cifs //<server-ip>/share /mnt -o username=<user>
+  ```
+
+- Windows:
+
+  ```powershell
+  \\<server-ip>\share
+  ```
+
+**Internals**:
+
+- Uses `pdbedit` to validate users
+- Uses `smbpasswd` for password management
+- Uses `awk` and `sed` for config parsing/updating
+- Applies:
+  - `777` permissions for public shares
+  - `770` permissions for private shares
+
+- Ensures global config:
+  - `server min protocol = SMB2`
+  - `map to guest = Bad User`
+
+**Notes**:
+
+- Public shares (`guest ok = yes`) are accessible to anyone on the network
+- Recommended to use private shares in production environments
+- Designed for single-node/local setups
+
+---
+
 ## Adding New Utilities
 
 To add a new utility:
 
 1. Place your script in the appropriate subdirectory (e.g., `python/`, `bash/`, `typescript/`).
 2. Update the `README.md`:
-
    - Add a new subsection under **Available Utilities** with details about your script.
    - Include dependencies, usage instructions, and examples.
 
