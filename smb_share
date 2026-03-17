@@ -1,5 +1,65 @@
 #!/bin/bash
 
+# ==============================================================================
+# Script Name : smb_share
+# Description : This script installs and configures Samba (SMB/CIFS) shares.
+#               It allows creating public or private shares, managing users,
+#               setting permissions, and automatically updating smb.conf.
+#               It also provides a CLI to list all configured shares.
+#
+# Author      : Pankaj Jackson
+# Version     : 1.0.0
+# Date        : 2026-03-17
+# License     : MIT License
+# ==============================================================================
+#
+# Usage:
+#   ./smb_share /path
+#       → Create a PUBLIC share (guest access enabled)
+#
+#   ./smb_share /path <user>
+#       → Create a PRIVATE share with user authentication
+#
+#   ./smb_share /path <user> <password>
+#       → Create PRIVATE share and set password non-interactively
+#
+#   ./smb_share list
+#   ./smb_share ls
+#       → List all configured SMB shares with access details
+#
+# Examples:
+#   ./smb_share /opt/storage/public
+#   ./smb_share /opt/storage/private/test pankaj
+#   ./smb_share /opt/storage/private/test pankaj mypassword
+#   ./smb_share list
+#
+# Arguments:
+#   /path       - Absolute path of directory to share
+#   user        - (Optional) Username for private share
+#   password    - (Optional) Password for SMB user (non-interactive)
+#
+# Dependencies:
+#   - samba
+#   - smbclient
+#
+# Notes:
+#   - Requires sudo/root privileges for installation and configuration
+#   - Automatically installs Samba if not present
+#   - Creates system user (nologin) for SMB authentication if needed
+#   - Ensures idempotent share creation (no duplicate entries)
+#   - Applies:
+#       • 777 permissions for public shares
+#       • 770 permissions for private shares
+#   - Updates /etc/samba/smb.conf safely
+#   - Restarts Samba service automatically after changes
+#
+# Limitations:
+#   - Designed for single-node/local setups (not clustered Samba)
+#   - Does not validate complex smb.conf customizations
+#
+# ==============================================================================
+
+
 GREEN="\e[32m"
 RED="\e[31m"
 RESET="\e[0m"
