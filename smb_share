@@ -1,0 +1,197 @@
+#!/bin/bash
+
+GREEN="\e[32m"
+RED="\e[31m"
+RESET="\e[0m"
+
+SMB_CONF="/etc/samba/smb.conf"
+
+echo_ok() { echo -e "${GREEN}[OK]${RESET} $1"; }
+echo_error() { echo -e "${RED}[ERROR]${RESET} $1"; }
+
+# ---------------- VALIDATION ----------------
+
+is_valid_path() {
+    [[ "$1" == /* && "$1" != "" ]]
+}
+
+user_exists() {
+    pdbedit -L | cut -d: -f1 | grep -qx "$1"
+}
+
+share_exists() {
+    grep -q "^\[$1\]" "$SMB_CONF"
+}
+
+get_share_block() {
+    awk "/^\[$1\]/,/^$/" "$SMB_CONF"
+}
+
+# ---------------- INSTALL ----------------
+
+install_samba() {
+    if ! dpkg -l | grep -q samba; then
+        sudo apt update && sudo apt install -y samba smbclient
+        echo_ok "Samba installed"
+    else
+        echo_ok "Samba already installed"
+    fi
+}
+
+# ---------------- USER ----------------
+
+ensure_user() {
+    local user="$1"
+    local pass="$2"
+
+    if user_exists "$user"; then
+        echo "[INFO] Skipping user creation: $user already exists"
+        return
+    fi
+
+    echo "[INFO] Creating user: $user"
+    sudo useradd -M -s /sbin/nologin "$user" 2>/dev/null
+
+    if [[ -z "$pass" ]]; then
+        sudo smbpasswd -a "$user"
+    else
+        echo -e "$pass\n$pass" | sudo smbpasswd -a -s "$user"
+    fi
+
+    echo_ok "User created: $user"
+}
+
+# ---------------- DIRECTORY ----------------
+
+setup_directory() {
+    local dir="$1"
+    local user="$2"
+
+    sudo mkdir -p "$dir"
+
+    if [[ -n "$user" ]]; then
+        sudo chown -R "$user":"$user" "$dir"
+        sudo chmod -R 770 "$dir"
+    else
+        sudo chmod -R 777 "$dir"
+    fi
+
+    echo_ok "Directory ready: $dir"
+}
+
+# ---------------- SHARE ----------------
+
+user_in_share() {
+    local name="$1"
+    local user="$2"
+
+    get_share_block "$name" | grep -q "valid users" && \
+    get_share_block "$name" | grep -qw "$user"
+}
+
+update_or_create_share() {
+    local dir="$1"
+    local user="$2"
+    local name
+    name=$(basename "$dir")
+
+    if share_exists "$name"; then
+        echo "[INFO] Share exists: $name"
+
+        if [[ -n "$user" ]]; then
+            if user_in_share "$name" "$user"; then
+                echo_ok "User already has access"
+            else
+                echo "[INFO] Adding user to share"
+
+                if get_share_block "$name" | grep -q "valid users"; then
+                    sudo sed -i "/^\[$name\]/,/^$/ s/valid users =.*/&,$user/" "$SMB_CONF"
+                else
+                    sudo sed -i "/^\[$name\]/a \   valid users = $user" "$SMB_CONF"
+                fi
+
+                echo_ok "User added"
+            fi
+        else
+            echo "[INFO] Public mode requested — leaving existing config unchanged"
+        fi
+
+        return
+    fi
+
+    # -------- CREATE NEW --------
+
+    echo "[INFO] Creating new share: $name"
+
+    sudo bash -c "cat >> $SMB_CONF" <<EOF
+
+[$name]
+   path = $dir
+   browseable = yes
+   writable = yes
+EOF
+
+    if [[ -z "$user" ]]; then
+        echo "   guest ok = yes" | sudo tee -a "$SMB_CONF" >/dev/null
+    else
+        echo "   guest ok = no" | sudo tee -a "$SMB_CONF" >/dev/null
+        echo "   valid users = $user" | sudo tee -a "$SMB_CONF" >/dev/null
+    fi
+
+    echo_ok "Share created"
+}
+
+# ---------------- GLOBAL ----------------
+
+ensure_global_config() {
+    if ! grep -q "server min protocol" "$SMB_CONF"; then
+        sudo sed -i '/\[global\]/a \
+   server min protocol = SMB2\n   map to guest = Bad User' "$SMB_CONF"
+    fi
+}
+
+# ---------------- SERVICE ----------------
+
+restart_samba() {
+    sudo systemctl restart smbd
+    sudo systemctl enable smbd >/dev/null 2>&1
+    echo_ok "Samba restarted"
+}
+
+# ---------------- MAIN ----------------
+
+smb_share() {
+    local dir="$1"
+    local user="$2"
+    local pass="$3"
+
+    if ! is_valid_path "$dir"; then
+        echo_error "Invalid path"
+        exit 1
+    fi
+
+    install_samba
+
+    if [[ -n "$user" ]]; then
+        ensure_user "$user" "$pass"
+    fi
+
+    setup_directory "$dir" "$user"
+    ensure_global_config
+    update_or_create_share "$dir" "$user"
+    restart_samba
+
+    IP=$(hostname -I | awk '{print $1}')
+
+    echo_ok "✅ SMB Share ready"
+    echo "Path: //$IP/$(basename "$dir")"
+
+    if [[ -n "$user" ]]; then
+        echo "User: $user"
+    else
+        echo "Access: Public"
+    fi
+}
+
+# CLI
+smb_share "$1" "$2" "$3"
