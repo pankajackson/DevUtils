@@ -50,7 +50,6 @@ ensure_user() {
     fi
 
     echo "[INFO] Creating user: $user"
-
     sudo useradd -M -s /sbin/nologin "$user" 2>/dev/null
 
     local attempts=0
@@ -74,7 +73,7 @@ ensure_user() {
 
         echo_error "Password setup failed"
         ((attempts++))
-        pass=""   # fallback to interactive
+        pass=""
     done
 
     echo_error "Failed to set password after $max_attempts attempts"
@@ -139,8 +138,6 @@ update_or_create_share() {
         return
     fi
 
-    # -------- CREATE NEW --------
-
     echo "[INFO] Creating new share: $name"
 
     sudo bash -c "cat >> $SMB_CONF" <<EOF
@@ -178,6 +175,48 @@ restart_samba() {
     echo_ok "Samba restarted"
 }
 
+# ---------------- OUTPUT ----------------
+
+print_share_details() {
+    local share="$1"
+    local ip="$2"
+
+    echo ""
+    echo "Share: $share"
+
+    if get_share_block "$share" | grep -q "guest ok = yes"; then
+        echo "Access:"
+        echo "  smbclient //$ip/$share -N"
+    else
+        echo "Access:"
+        echo "  smbclient //$ip/$share -U <user>"
+    fi
+
+    echo ""
+    echo "Mount (Linux):"
+    echo "  sudo mount -t cifs //$ip/$share /mnt -o username=<user>"
+
+    echo ""
+    echo "Windows:"
+    echo "  \\\\$ip\\$share"
+}
+
+list_shares() {
+    local ip
+    ip=$(hostname -I | awk '{print $1}')
+
+    echo ""
+    echo "========== SMB SHARES =========="
+
+    grep "^\[" "$SMB_CONF" | tr -d '[]' | while read -r share; do
+        [[ "$share" == "global" ]] && continue
+        print_share_details "$share" "$ip"
+    done
+
+    echo ""
+    echo "================================"
+}
+
 # ---------------- MAIN ----------------
 
 smb_share() {
@@ -211,7 +250,26 @@ smb_share() {
     else
         echo "Access: Public"
     fi
+
+    echo ""
+    echo "========== SMB SHARE =========="
+    print_share_details "$(basename "$dir")" "$IP"
+    echo ""
+    echo "================================"
 }
 
-# CLI
+# ---------------- CLI ----------------
+
+if [[ -z "$1" ]]; then
+    echo "Usage:"
+    echo "  $0 /path [user] [password]"
+    echo "  $0 list | ls"
+    exit 1
+fi
+
+if [[ "$1" == "list" || "$1" == "ls" ]]; then
+    list_shares
+    exit 0
+fi
+
 smb_share "$1" "$2" "$3"
