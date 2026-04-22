@@ -233,7 +233,9 @@ mount_all() {
 
   # ask password once if needed
   if [ "$need_mount" -eq 1 ]; then
-    SESSION_PASS=$(prompt "Enter password" true)
+    if [ -z "$SESSION_PASS" ]; then
+      SESSION_PASS=$(prompt "Enter password" true)
+    fi
   fi
 
   # mount loop
