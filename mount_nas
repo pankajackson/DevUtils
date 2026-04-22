@@ -1,0 +1,142 @@
+#!/usr/bin/env bash
+
+CONFIG_FILE="$HOME/.config/syno-cli/config"
+MOUNT_BASE="$HOME/NAS"
+
+mkdir -p "$MOUNT_BASE"
+mkdir -p "$(dirname "$CONFIG_FILE")"
+touch "$CONFIG_FILE"
+
+# --------------------------
+# Read config
+# --------------------------
+get_config() {
+  local profile="$1"
+  local key="$2"
+
+  awk -F '=' -v section="[$profile]" -v key="$key" '
+    $0 == section { found=1; next }
+    /^\[/ { found=0 }
+    found && $1 == key { print $2; exit }
+  ' "$CONFIG_FILE"
+}
+
+# --------------------------
+# Prompt helper
+# --------------------------
+ensure_value() {
+  local value="$1"
+  local prompt="$2"
+  local secret="$3"
+
+  if [ -z "$value" ]; then
+    if [ "$secret" = "true" ]; then
+      read -s -p "$prompt: " value
+      echo
+    else
+      read -p "$prompt: " value
+    fi
+  fi
+
+  echo "$value"
+}
+
+# --------------------------
+# Check if already mounted
+# --------------------------
+is_mounted() {
+  mount | grep -q "on $1 "
+}
+
+# --------------------------
+# Mount function
+# --------------------------
+mount_nas() {
+  local share="$1"
+  shift
+
+  # ---- validate share first ----
+  if [ -z "$share" ]; then
+    echo "❌ Error: Share name required"
+    echo "Usage:"
+    echo "  mount_nas <share> [options]"
+    echo "  mount_nas all"
+    return 1
+  fi
+
+  local host=""
+  local user=""
+  local pass=""
+  local profile="default"
+
+  # ---- parse args ----
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -H|--host) host="$2"; shift 2 ;;
+      -U|--username) user="$2"; shift 2 ;;
+      -P|--password) pass="$2"; shift 2 ;;
+      --profile) profile="$2"; shift 2 ;;
+      *) echo "❌ Unknown option: $1"; return 1 ;;
+    esac
+  done
+
+  # ---- fallback to config ----
+  [ -z "$host" ] && host=$(get_config "$profile" "host")
+  [ -z "$user" ] && user=$(get_config "$profile" "user")
+
+  # ---- ask only required things first ----
+  host=$(ensure_value "$host" "Enter NAS host/IP")
+  user=$(ensure_value "$user" "Enter username")
+
+  if [ -z "$host" ] || [ -z "$user" ]; then
+    echo "❌ Missing required connection details"
+    return 1
+  fi
+
+  # ---- ask password LAST ----
+  pass=$(ensure_value "$pass" "Enter password" true)
+
+  local mount_point="$MOUNT_BASE/$share"
+  mkdir -p "$mount_point"
+
+  # ---- skip if already mounted ----
+  if is_mounted "$mount_point"; then
+    echo "⚠️  $share already mounted at $mount_point"
+    return 0
+  fi
+
+  # ---- mount ----
+  sudo mount -t cifs "//$host/$share" "$mount_point" \
+    -o username="$user",password="$pass",vers=3.0,uid=$(id -u),gid=$(id -g),iocharset=utf8,file_mode=0775,dir_mode=0775
+
+  if [ $? -eq 0 ]; then
+    echo "✅ Mounted $share → $mount_point"
+  else
+    echo "❌ Failed to mount //$host/$share"
+    echo "👉 Debug (last kernel logs):"
+    dmesg | tail -n 5
+    return 1
+  fi
+}
+
+# --------------------------
+# Mount all shares
+# --------------------------
+mount_all() {
+  for share in Media Games Workspace Software Personal Archive; do
+    mount_nas "$share" "$@"
+  done
+}
+
+# --------------------------
+# Entry point
+# --------------------------
+case "$1" in
+  all)
+    shift
+    mount_all "$@"
+    ;;
+  *)
+    mount_nas "$@"
+    ;;
+esac
