@@ -22,51 +22,101 @@ get_config() {
 }
 
 # --------------------------
-# Prompt helper
+# List profiles
 # --------------------------
-ensure_value() {
-  local value="$1"
-  local prompt="$2"
-  local secret="$3"
-
-  if [ -z "$value" ]; then
-    if [ "$secret" = "true" ]; then
-      read -s -p "$prompt: " value
-      echo
-    else
-      read -p "$prompt: " value
-    fi
-  fi
-
-  echo "$value"
+list_profiles() {
+  grep "^\[" "$CONFIG_FILE" | tr -d '[]'
 }
 
 # --------------------------
-# Check if already mounted
+# Clean input (CR/LF + trim)
+# --------------------------
+clean_input() {
+  local val="$1"
+
+  # remove CR/LF
+  val="$(printf "%s" "$val" | tr -d '\r\n')"
+
+  # trim spaces
+  val="${val#"${val%%[![:space:]]*}"}"
+  val="${val%"${val##*[![:space:]]}"}"
+
+  echo -n "$val"
+}
+
+# --------------------------
+# Prompt helper (safe)
+# --------------------------
+prompt() {
+  local text="$1"
+  local secret="$2"
+  local val
+
+  if [ "$secret" = "true" ]; then
+    read -s -p "$text: " val
+    echo
+  else
+    read -p "$text: " val
+  fi
+
+  clean_input "$val"
+}
+
+# --------------------------
+# Check mount
 # --------------------------
 is_mounted() {
   mount | grep -q "on $1 "
 }
 
 # --------------------------
-# Mount function
+# Save profile
+# --------------------------
+save_profile() {
+  echo
+  read -p "💾 Save these credentials as profile? (y/n): " ans
+  [[ "$ans" != "y" ]] && return
+
+  echo
+  echo "Existing profiles:"
+  list_profiles
+  echo
+
+  read -p "Enter profile name: " profile
+
+  if grep -q "^\[$profile\]" "$CONFIG_FILE"; then
+    read -p "⚠️ Profile exists. Overwrite? (y/n): " overwrite
+    [[ "$overwrite" != "y" ]] && return
+    sed -i "/^\[$profile\]/,/^\[/d" "$CONFIG_FILE"
+  fi
+
+  [ -z "$shares" ] && shares="Media,Games,Workspace,Software,Personal,Archive"
+
+  cat >> "$CONFIG_FILE" <<EOF
+[$profile]
+host=$host
+user=$user
+pass=$pass
+domain=$domain
+shares=$shares
+EOF
+
+  chmod 600 "$CONFIG_FILE"
+
+  echo "✅ Profile '$profile' saved"
+}
+
+# --------------------------
+# Mount single share
 # --------------------------
 mount_nas() {
   local share="$1"
   shift
 
-  # ---- validate share first ----
-  if [ -z "$share" ]; then
-    echo "❌ Error: Share name required"
-    echo "Usage:"
-    echo "  mount_nas <share> [options]"
-    echo "  mount_nas all"
-    return 1
-  fi
-
   local host=""
   local user=""
   local pass=""
+  local domain=""
   local profile="default"
 
   # ---- parse args ----
@@ -75,66 +125,144 @@ mount_nas() {
       -H|--host) host="$2"; shift 2 ;;
       -U|--username) user="$2"; shift 2 ;;
       -P|--password) pass="$2"; shift 2 ;;
+      -D|--domain) domain="$2"; shift 2 ;;
       --profile) profile="$2"; shift 2 ;;
       *) echo "❌ Unknown option: $1"; return 1 ;;
     esac
   done
 
-  # ---- fallback to config ----
+  # ---- fallback config ----
   [ -z "$host" ] && host=$(get_config "$profile" "host")
   [ -z "$user" ] && user=$(get_config "$profile" "user")
+  [ -z "$pass" ] && pass=$(get_config "$profile" "pass")
+  [ -z "$domain" ] && domain=$(get_config "$profile" "domain")
 
-  # ---- ask only required things first ----
-  host=$(ensure_value "$host" "Enter NAS host/IP")
-  user=$(ensure_value "$user" "Enter username")
+  # ---- defaults ----
+  [ -z "$domain" ] && domain="WORKGROUP"
+
+  # ---- prompt ----
+  [ -z "$host" ] && host=$(prompt "Enter NAS host/IP")
+  [ -z "$user" ] && user=$(prompt "Enter username")
+  [ -z "$pass" ] && pass=$(prompt "Enter password" true)
 
   if [ -z "$host" ] || [ -z "$user" ]; then
     echo "❌ Missing required connection details"
     return 1
   fi
 
-  # ---- ask password LAST ----
-  pass=$(ensure_value "$pass" "Enter password" true)
+  # ---- no share → mount all ----
+  if [ -z "$share" ]; then
+    echo "⚠️ No share provided → mounting all from profile"
+    mount_all --profile "$profile"
+    return
+  fi
+
+  # ---- offer save ----
+  if [ -z "$(get_config "$profile" "host")" ]; then
+    shares="$share"
+    save_profile
+  fi
 
   local mount_point="$MOUNT_BASE/$share"
   mkdir -p "$mount_point"
 
-  # ---- skip if already mounted ----
   if is_mounted "$mount_point"; then
-    echo "⚠️  $share already mounted at $mount_point"
+    echo "⚠️  $share already mounted"
     return 0
   fi
 
+  # ---- credentials file ----
+  cred=$(mktemp)
+  chmod 600 "$cred"
+
+  pass_clean=$(clean_input "$pass")
+
+  printf "username=%s\npassword=%s\ndomain=%s\n" \
+    "$user" "$pass_clean" "$domain" > "$cred"
+
   # ---- mount ----
   sudo mount -t cifs "//$host/$share" "$mount_point" \
-    -o username="$user",password="$pass",vers=3.0,uid=$(id -u),gid=$(id -g),iocharset=utf8,file_mode=0775,dir_mode=0775
+    -o credentials="$cred",vers=3.0,sec=ntlmssp,uid=$(id -u),gid=$(id -g),iocharset=utf8,file_mode=0775,dir_mode=0775
 
-  if [ $? -eq 0 ]; then
+  status=$?
+  rm -f "$cred"
+
+  if [ $status -eq 0 ]; then
     echo "✅ Mounted $share → $mount_point"
   else
     echo "❌ Failed to mount //$host/$share"
-    echo "👉 Debug (last kernel logs):"
-    dmesg | tail -n 5
+    echo "👉 Debug: sudo dmesg | tail -n 20"
     return 1
   fi
 }
 
 # --------------------------
-# Mount all shares
+# Mount all
 # --------------------------
 mount_all() {
-  for share in Media Games Workspace Software Personal Archive; do
-    mount_nas "$share" "$@"
+  local profile="default"
+
+  if [ "$1" = "--profile" ]; then
+    profile="$2"
+  fi
+
+  shares=$(get_config "$profile" "shares")
+
+  if [ -z "$shares" ]; then
+    echo "❌ No shares defined in profile '$profile'"
+    return 1
+  fi
+
+  IFS=',' read -ra list <<< "$shares"
+
+  for s in "${list[@]}"; do
+    mount_nas "$s" --profile "$profile"
   done
 }
 
 # --------------------------
-# Entry point
+# Config command
+# --------------------------
+config_profile() {
+  read -p "Profile name: " profile
+  read -p "Host: " host
+  read -p "Username: " user
+  read -s -p "Password: " pass
+  echo
+  read -p "Domain [WORKGROUP]: " domain
+  read -p "Shares (comma separated): " shares
+
+  [ -z "$domain" ] && domain="WORKGROUP"
+
+  sed -i "/^\[$profile\]/,/^\[/d" "$CONFIG_FILE"
+
+  cat >> "$CONFIG_FILE" <<EOF
+[$profile]
+host=$host
+user=$user
+pass=$pass
+domain=$domain
+shares=$shares
+EOF
+
+  chmod 600 "$CONFIG_FILE"
+
+  echo "✅ Profile saved"
+}
+
+# --------------------------
+# Entry
 # --------------------------
 case "$1" in
   all)
     shift
     mount_all "$@"
+    ;;
+  config)
+    config_profile
+    ;;
+  list)
+    list_profiles
     ;;
   *)
     mount_nas "$@"
