@@ -2,6 +2,7 @@
 
 CONFIG_FILE="$HOME/.config/syno-cli/config"
 MOUNT_BASE="$HOME/NAS"
+SESSION_PASS=""
 
 mkdir -p "$MOUNT_BASE"
 mkdir -p "$(dirname "$CONFIG_FILE")"
@@ -131,6 +132,14 @@ mount_nas() {
     esac
   done
 
+  local mount_point="$MOUNT_BASE/$share"
+  mkdir -p "$mount_point"
+
+  if is_mounted "$mount_point"; then
+    echo "⚠️  $share already mounted"
+    return 0
+  fi
+
   # ---- fallback config ----
   [ -z "$host" ] && host=$(get_config "$profile" "host")
   [ -z "$user" ] && user=$(get_config "$profile" "user")
@@ -143,7 +152,12 @@ mount_nas() {
   # ---- prompt ----
   [ -z "$host" ] && host=$(prompt "Enter NAS host/IP")
   [ -z "$user" ] && user=$(prompt "Enter username")
-  [ -z "$pass" ] && pass=$(prompt "Enter password" true)
+  if [ -z "$pass" ]; then
+    if [ -z "$SESSION_PASS" ]; then
+      SESSION_PASS=$(prompt "Enter password" true)
+    fi
+    pass="$SESSION_PASS"
+  fi
 
   if [ -z "$host" ] || [ -z "$user" ]; then
     echo "❌ Missing required connection details"
@@ -161,14 +175,6 @@ mount_nas() {
   if [ -z "$(get_config "$profile" "host")" ]; then
     shares="$share"
     save_profile
-  fi
-
-  local mount_point="$MOUNT_BASE/$share"
-  mkdir -p "$mount_point"
-
-  if is_mounted "$mount_point"; then
-    echo "⚠️  $share already mounted"
-    return 0
   fi
 
   # ---- credentials file ----
@@ -215,6 +221,22 @@ mount_all() {
 
   IFS=',' read -ra list <<< "$shares"
 
+  # detect if any share needs mounting
+  need_mount=0
+  for s in "${list[@]}"; do
+    mount_point="$MOUNT_BASE/$s"
+    if ! is_mounted "$mount_point"; then
+      need_mount=1
+      break
+    fi
+  done
+
+  # ask password once if needed
+  if [ "$need_mount" -eq 1 ]; then
+    SESSION_PASS=$(prompt "Enter password" true)
+  fi
+
+  # mount loop
   for s in "${list[@]}"; do
     mount_nas "$s" --profile "$profile"
   done
