@@ -248,6 +248,55 @@ mount_all() {
 }
 
 # --------------------------
+# Unmount single share
+# --------------------------
+unmount_nas() {
+  local share="$1"
+  local mount_point="$MOUNT_BASE/$share"
+
+  if ! is_mounted "$mount_point"; then
+    echo "⚠️  $share is not mounted"
+    return 0
+  fi
+
+  sudo umount "$mount_point"
+  status=$?
+
+  if [ $status -eq 0 ]; then
+    echo "🗑️ Unmounted $share"
+  else
+    echo "❌ Failed to unmount $share"
+  fi
+}
+
+# --------------------------
+# Unmount all
+# --------------------------
+unmount_all() {
+  local profile="default"
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -p|--profile) profile="$2"; shift 2 ;;
+      *) shift ;;
+    esac
+  done
+
+  shares=$(get_config "$profile" "shares")
+
+  if [ -z "$shares" ]; then
+    echo "❌ No shares defined in profile '$profile'"
+    return 1
+  fi
+
+  IFS=',' read -ra list <<< "$shares"
+
+  for s in "${list[@]}"; do
+    unmount_nas "$s"
+  done
+}
+
+# --------------------------
 # Config command
 # --------------------------
 config_profile() {
@@ -280,10 +329,24 @@ EOF
 # --------------------------
 # Entry
 # --------------------------
-case "$1" in
+action="$1"
+shift
+
+# detect unmount mode
+if [[ "$action" == -* ]]; then
+  action="${action#-}"   # remove leading '-'
+  mode="unmount"
+else
+  mode="mount"
+fi
+
+case "$action" in
   all)
-    shift
-    mount_all "$@"
+    if [ "$mode" = "mount" ]; then
+      mount_all "$@"
+    else
+      unmount_all "$@"
+    fi
     ;;
   config)
     config_profile
@@ -292,6 +355,10 @@ case "$1" in
     list_profiles
     ;;
   *)
-    mount_nas "$@"
+    if [ "$mode" = "mount" ]; then
+      mount_nas "$action" "$@"
+    else
+      unmount_nas "$action"
+    fi
     ;;
 esac
