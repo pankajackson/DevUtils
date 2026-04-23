@@ -78,7 +78,51 @@ get_base_path() {
 }
 
 list_profiles() {
-  grep "^\[" "$CONFIG_FILE" | tr -d '[]'
+  local profiles
+  profiles=$(grep "^\[" "$CONFIG_FILE" | tr -d '[]')
+
+  if [ -z "$profiles" ]; then
+    echo "❌ No profiles found"
+    return
+  fi
+
+  echo "📦 Available Profiles"
+  echo "────────────────────────────────────────────"
+
+  for profile in $profiles; do
+    local host user base shares
+
+    host=$(get_config "$profile" "host")
+    user=$(get_config "$profile" "user")
+    base=$(get_base_path "$profile")
+    shares=$(get_config "$profile" "shares")
+
+    echo
+    echo "🔹 Profile: $profile"
+    echo "   ├─ Host      : ${host:-N/A}"
+    echo "   ├─ User      : ${user:-N/A}"
+    echo "   ├─ Base Path : $base"
+    
+    if [ -n "$shares" ]; then
+      echo "   ├─ Shares:"
+      
+      IFS=',' read -ra list <<< "$shares"
+      for s in "${list[@]}"; do
+        local mount_point="$base/$s"
+
+        if is_mounted "$mount_point"; then
+          echo "   │   ✅ $s"
+        else
+          echo "   │   ⭕ $s"
+        fi
+      done
+    else
+      echo "   └─ Shares    : ❌ None defined"
+    fi
+  done
+
+  echo
+  echo "Legend: ✅ Mounted | ⭕ Not Mounted"
 }
 
 # --------------------------
