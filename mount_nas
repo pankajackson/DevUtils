@@ -258,11 +258,16 @@ unmount_nas() {
   shift
 
   local profile="default"
+  local target_path=""
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
       -p|--profile)
         profile="$2"
+        shift 2
+        ;;
+      -t|--target)
+        target_path="$2"
         shift 2
         ;;
       *)
@@ -271,20 +276,25 @@ unmount_nas() {
     esac
   done
 
-  local base
-  base=$(get_base_path "$profile")
+  local mount_point
 
-  local mount_point="$base/$share"
+  if [ -n "$target_path" ]; then
+    mount_point="$target_path"
+  else
+    local base
+    base=$(get_base_path "$profile")
+    mount_point="$base/$share"
+  fi
 
   if ! is_mounted "$mount_point"; then
-    echo "⚠️  $share is not mounted"
+    echo "⚠️  $share is not mounted at $mount_point"
     return 0
   fi
 
   sudo umount "$mount_point"
 
   if [ $? -eq 0 ]; then
-    echo "🗑️ Unmounted $share"
+    echo "🗑️ Unmounted $share → $mount_point"
   else
     echo "❌ Failed to unmount $share"
   fi
