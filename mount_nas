@@ -30,23 +30,18 @@ list_profiles() {
 }
 
 # --------------------------
-# Clean input (CR/LF + trim)
+# Clean input
 # --------------------------
 clean_input() {
   local val="$1"
-
-  # remove CR/LF
   val="$(printf "%s" "$val" | tr -d '\r\n')"
-
-  # trim spaces
   val="${val#"${val%%[![:space:]]*}"}"
   val="${val%"${val##*[![:space:]]}"}"
-
   echo -n "$val"
 }
 
 # --------------------------
-# Prompt helper (safe)
+# Prompt helper
 # --------------------------
 prompt() {
   local text="$1"
@@ -71,40 +66,33 @@ is_mounted() {
 }
 
 # --------------------------
-# Save profile
+# Resolve credentials
 # --------------------------
-save_profile() {
-  echo
-  read -p "💾 Save these credentials as profile? (y/n): " ans
-  [[ "$ans" != "y" ]] && return
+resolve_pass() {
+  local profile="$1"
+  local cli_pass="$2"
 
-  echo
-  echo "Existing profiles:"
-  list_profiles
-  echo
-
-  read -p "Enter profile name: " profile
-
-  if grep -q "^\[$profile\]" "$CONFIG_FILE"; then
-    read -p "⚠️ Profile exists. Overwrite? (y/n): " overwrite
-    [[ "$overwrite" != "y" ]] && return
-    sed -i "/^\[$profile\]/,/^\[/d" "$CONFIG_FILE"
+  # priority: CLI > SESSION > profile > prompt
+  if [ -n "$cli_pass" ]; then
+    echo "$cli_pass"
+    return
   fi
 
-  [ -z "$shares" ] && shares="Media,Games,Workspace,Software,Personal,Archive"
+  if [ -n "$SESSION_PASS" ]; then
+    echo "$SESSION_PASS"
+    return
+  fi
 
-  cat >> "$CONFIG_FILE" <<EOF
-[$profile]
-host=$host
-user=$user
-pass=$pass
-domain=$domain
-shares=$shares
-EOF
+  local cfg_pass
+  cfg_pass=$(get_config "$profile" "pass")
 
-  chmod 600 "$CONFIG_FILE"
+  if [ -n "$cfg_pass" ]; then
+    echo "$cfg_pass"
+    return
+  fi
 
-  echo "✅ Profile '$profile' saved"
+  SESSION_PASS=$(prompt "Enter password" true)
+  echo "$SESSION_PASS"
 }
 
 # --------------------------
@@ -140,41 +128,28 @@ mount_nas() {
     return 0
   fi
 
-  # ---- fallback config ----
+  # ---- config fallback (except pass) ----
   [ -z "$host" ] && host=$(get_config "$profile" "host")
   [ -z "$user" ] && user=$(get_config "$profile" "user")
-  [ -z "$pass" ] && pass=$(get_config "$profile" "pass")
   [ -z "$domain" ] && domain=$(get_config "$profile" "domain")
-
-  # ---- defaults ----
   [ -z "$domain" ] && domain="WORKGROUP"
 
-  # ---- prompt ----
+  # ---- resolve password (correct priority) ----
+  pass=$(resolve_pass "$profile" "$pass")
+
+  # ---- prompt fallback ----
   [ -z "$host" ] && host=$(prompt "Enter NAS host/IP")
   [ -z "$user" ] && user=$(prompt "Enter username")
-  if [ -z "$pass" ]; then
-    if [ -z "$SESSION_PASS" ]; then
-      SESSION_PASS=$(prompt "Enter password" true)
-    fi
-    pass="$SESSION_PASS"
-  fi
 
   if [ -z "$host" ] || [ -z "$user" ]; then
     echo "❌ Missing required connection details"
     return 1
   fi
 
-  # ---- no share → mount all ----
+  # ---- mount all fallback ----
   if [ -z "$share" ]; then
-    echo "⚠️ No share provided → mounting all from profile"
     mount_all -p "$profile"
     return
-  fi
-
-  # ---- offer save ----
-  if [ -z "$(get_config "$profile" "host")" ]; then
-    shares="$share"
-    save_profile
   fi
 
   # ---- credentials file ----
@@ -207,11 +182,19 @@ mount_nas() {
 # --------------------------
 mount_all() {
   local profile="default"
+  local extra_args=()
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      -p|--profile) profile="$2"; shift 2 ;;
-      *) shift ;;
+      -p|--profile)
+        profile="$2"
+        extra_args+=("$1" "$2")
+        shift 2
+        ;;
+      *)
+        extra_args+=("$1")
+        shift
+        ;;
     esac
   done
 
@@ -224,26 +207,8 @@ mount_all() {
 
   IFS=',' read -ra list <<< "$shares"
 
-  # detect if any share needs mounting
-  need_mount=0
   for s in "${list[@]}"; do
-    mount_point="$MOUNT_BASE/$s"
-    if ! is_mounted "$mount_point"; then
-      need_mount=1
-      break
-    fi
-  done
-
-  # ask password once if needed
-  if [ "$need_mount" -eq 1 ]; then
-    if [ -z "$SESSION_PASS" ]; then
-      SESSION_PASS=$(prompt "Enter password" true)
-    fi
-  fi
-
-  # mount loop
-  for s in "${list[@]}"; do
-    mount_nas "$s" -p "$profile"
+    mount_nas "$s" "${extra_args[@]}"
   done
 }
 
@@ -260,9 +225,8 @@ unmount_nas() {
   fi
 
   sudo umount "$mount_point"
-  status=$?
 
-  if [ $status -eq 0 ]; then
+  if [ $? -eq 0 ]; then
     echo "🗑️ Unmounted $share"
   else
     echo "❌ Failed to unmount $share"
@@ -284,10 +248,10 @@ unmount_all() {
 
   shares=$(get_config "$profile" "shares")
 
-  if [ -z "$shares" ]; then
+  [ -z "$shares" ] && {
     echo "❌ No shares defined in profile '$profile'"
     return 1
-  fi
+  }
 
   IFS=',' read -ra list <<< "$shares"
 
@@ -322,7 +286,6 @@ shares=$shares
 EOF
 
   chmod 600 "$CONFIG_FILE"
-
   echo "✅ Profile saved"
 }
 
@@ -332,9 +295,8 @@ EOF
 action="$1"
 shift
 
-# detect unmount mode
 if [[ "$action" == -* ]]; then
-  action="${action#-}"   # remove leading '-'
+  action="${action#-}"
   mode="unmount"
 else
   mode="mount"
