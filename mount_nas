@@ -229,6 +229,10 @@ mount_all() {
         extra_args+=("$1" "$2")
         shift 2
         ;;
+      -t|--target)
+        echo "❌ --target (-t) is only valid for single share mount"
+        return 1
+        ;;
       *)
         extra_args+=("$1")
         shift
@@ -311,6 +315,10 @@ unmount_all() {
       -p|--profile)
         profile="$2"
         shift 2
+        ;;
+      -t|--target)
+        echo "❌ --target (-t) is only valid for single share unmount"
+        return 1
         ;;
       *)
         shift
