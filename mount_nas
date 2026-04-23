@@ -1,6 +1,73 @@
 #!/usr/bin/env bash
+# ==============================================================================
+# Script Name: nmounter
+# Description: CLI tool to mount/unmount SMB/CIFS network shares using profiles.
+#
+# Author: Pankaj Jackson
+# Version: 1.0.0
+# Date: 2026-04-23
+# License: MIT License
+# ==============================================================================
+#
+# Usage:
+#   nmounter [share] [options]
+#   nmounter all [options]
+#   nmounter -share             (unmount share)
+#   nmounter -all               (unmount all shares)
+#   nmounter list               (list profiles and mount status)
+#   nmounter config             (create/update profile)
+#
+# Examples:
+#   nmounter Media -p home_nas
+#   nmounter all -p home_nas
+#   nmounter -Media -p home_nas
+#   nmounter Media -t /mnt/media
+#   nmounter list
+#
+# Options:
+#   -p, --profile NAME      Use profile from config
+#   -H, --host HOST         NAS host/IP (overrides profile)
+#   -U, --username USER     Username (overrides profile)
+#   -P, --password PASS     Password (overrides profile/session)
+#   -D, --domain DOMAIN     Domain (default: WORKGROUP)
+#   -t, --target PATH       Custom mount target (single share only)
+#   -c, --config PATH       Custom config file path
+#   -h, --help              Show help
+#
+# Configuration:
+#   Default config path:
+#     ~/.config/nmounter/config
+#
+#   Example profile:
+#     [home_nas]
+#     host=192.168.1.4
+#     user=john
+#     pass=your_password
+#     domain=WORKGROUP
+#     base_path=/home/john/NAS
+#     shares=Media,Personal,Archive
+#
+# Features:
+#   - Profile-based SMB/CIFS access
+#   - Mount/unmount single or multiple shares
+#   - Session password reuse (prompt once)
+#   - Custom mount paths per share
+#   - Automatic mount directory creation
+#   - Mounted state detection
+#   - Decorative profile listing
+#
+# Dependencies:
+#   - mount.cifs (cifs-utils package)
+#   - sudo privileges for mount/umount
+#
+# Notes:
+#   - Passwords stored in config are plain text (chmod 600 enforced)
+#   - Use profiles for convenience, CLI args for overrides
+#   - '--target' is only valid for single share operations
+#
+# ==============================================================================
 
-CONFIG_FILE="$HOME/.config/syno-cli/config"
+CONFIG_FILE="$HOME/.config/nmounter/config"
 DEFAULT_MOUNT_BASE="$HOME/NAS"
 MOUNT_BASE="$DEFAULT_MOUNT_BASE"
 SESSION_PASS=""
@@ -13,11 +80,14 @@ touch "$CONFIG_FILE"
 # --------------------------
 show_help() {
   cat <<EOF
+Description:
+  CLI tool to mount/unmount SMB/CIFS network shares with profile support.
+
 Usage:
-  mount_nas [share] [options]
-  mount_nas all [options]
-  mount_nas -share        (unmount)
-  mount_nas -all          (unmount all)
+  nmounter [share] [options]
+  nmounter all [options]
+  nmounter -share        (unmount)
+  nmounter -all          (unmount all)
 
 Options:
   -p, --profile NAME      Use profile
@@ -25,14 +95,21 @@ Options:
   -U, --username USER     Username
   -P, --password PASS     Password
   -D, --domain DOMAIN     Domain (default: WORKGROUP)
-  -c, --config PATH       Custom config file
-  -t, --target PATH       Custom mount target path
+  -c, --config PATH       Config file (default: $CONFIG_FILE)
+  -t, --target PATH       Custom mount target (single only)
   -h, --help              Show help
+
+Examples:
+  nmounter Media -p home_nas
+  nmounter all -p home_nas
+  nmounter -Media -p home_nas
+  nmounter Media -t /mnt/media
+  nmounter list
 EOF
 }
 
 # --------------------------
-# Global arg parsing
+# Global args
 # --------------------------
 ARGS=()
 while [[ $# -gt 0 ]]; do
