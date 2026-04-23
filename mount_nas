@@ -127,7 +127,7 @@ mount_nas() {
       -U|--username) user="$2"; shift 2 ;;
       -P|--password) pass="$2"; shift 2 ;;
       -D|--domain) domain="$2"; shift 2 ;;
-      --profile) profile="$2"; shift 2 ;;
+      -p|--profile) profile="$2"; shift 2 ;;
       *) echo "❌ Unknown option: $1"; return 1 ;;
     esac
   done
@@ -167,7 +167,7 @@ mount_nas() {
   # ---- no share → mount all ----
   if [ -z "$share" ]; then
     echo "⚠️ No share provided → mounting all from profile"
-    mount_all --profile "$profile"
+    mount_all -p "$profile"
     return
   fi
 
@@ -208,9 +208,12 @@ mount_nas() {
 mount_all() {
   local profile="default"
 
-  if [ "$1" = "--profile" ]; then
-    profile="$2"
-  fi
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -p|--profile) profile="$2"; shift 2 ;;
+      *) shift ;;
+    esac
+  done
 
   shares=$(get_config "$profile" "shares")
 
@@ -240,7 +243,7 @@ mount_all() {
 
   # mount loop
   for s in "${list[@]}"; do
-    mount_nas "$s" --profile "$profile"
+    mount_nas "$s" -p "$profile"
   done
 }
 
