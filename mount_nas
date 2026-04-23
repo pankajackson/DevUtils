@@ -237,7 +237,11 @@ mount_all() {
   done
 
   shares=$(get_config "$profile" "shares")
-  [ -z "$shares" ] && { echo "❌ No shares in profile '$profile'"; return 1; }
+
+  if [ -z "$shares" ]; then
+    echo "❌ No shares defined in profile '$profile'"
+    return 1
+  fi
 
   IFS=',' read -ra list <<< "$shares"
 
@@ -305,10 +309,11 @@ unmount_all() {
   done
 
   shares=$(get_config "$profile" "shares")
-  [ -z "$shares" ] && {
+
+  if [ -z "$shares" ]; then
     echo "❌ No shares defined in profile '$profile'"
     return 1
-  }
+  fi
 
   IFS=',' read -ra list <<< "$shares"
 
@@ -352,18 +357,26 @@ EOF
 # Entry
 # --------------------------
 action="$1"
-shift
+shift || true
+
+mode="mount"
 
 if [[ "$action" == -* ]]; then
-  action="${action#-}"
   mode="unmount"
-else
-  mode="mount"
+  action="${action#-}"
 fi
 
 case "$action" in
+  ""|-h|--help)
+    show_help
+    exit 0
+    ;;
   all)
-    [ "$mode" = "mount" ] && mount_all "$@" || unmount_all "$@"
+    if [ "$mode" = "mount" ]; then
+      mount_all "$@" || exit 1
+    else
+      unmount_all "$@" || exit 1
+    fi
     ;;
   config)
     config_profile
@@ -373,9 +386,9 @@ case "$action" in
     ;;
   *)
     if [ "$mode" = "mount" ]; then
-      mount_nas "$action" "$@"
+      mount_nas "$action" "$@" || exit 1
     else
-      unmount_nas "$action" "$@"
+      unmount_nas "$action" "$@" || exit 1
     fi
     ;;
 esac
