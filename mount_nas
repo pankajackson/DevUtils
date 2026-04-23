@@ -72,27 +72,30 @@ resolve_pass() {
   local profile="$1"
   local cli_pass="$2"
 
-  # priority: CLI > SESSION > profile > prompt
+  # 1. CLI
   if [ -n "$cli_pass" ]; then
-    echo "$cli_pass"
+    pass="$cli_pass"
     return
   fi
 
+  # 2. SESSION
   if [ -n "$SESSION_PASS" ]; then
-    echo "$SESSION_PASS"
+    pass="$SESSION_PASS"
     return
   fi
 
+  # 3. profile
   local cfg_pass
   cfg_pass=$(get_config "$profile" "pass")
 
   if [ -n "$cfg_pass" ]; then
-    echo "$cfg_pass"
+    pass="$cfg_pass"
     return
   fi
 
+  # 4. prompt ONCE
   SESSION_PASS=$(prompt "Enter password" true)
-  echo "$SESSION_PASS"
+  pass="$SESSION_PASS"
 }
 
 # --------------------------
@@ -135,7 +138,7 @@ mount_nas() {
   [ -z "$domain" ] && domain="WORKGROUP"
 
   # ---- resolve password (correct priority) ----
-  pass=$(resolve_pass "$profile" "$pass")
+  resolve_pass "$profile" "$pass"
 
   # ---- prompt fallback ----
   [ -z "$host" ] && host=$(prompt "Enter NAS host/IP")
