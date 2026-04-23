@@ -16,6 +16,7 @@
     - [6. Traffic Forwarder](#6-traffic-forwarder)
     - [7. NFS Share Manager](#7-nfs-share-manager)
     - [8. SMB Share Manager (Samba)](#8-smb-share-manager-samba)
+    - [9. Network Share Mounter (`nmounter`)](#9-network-share-mounter-nmounter)
   - [Adding New Utilities](#adding-new-utilities)
   - [Contributing](#contributing)
   - [License](#license)
@@ -665,6 +666,156 @@ smb_share list
 - Public shares (`guest ok = yes`) are accessible to anyone on the network
 - Recommended to use private shares in production environments
 - Designed for single-node/local setups
+
+---
+
+### 9. Network Share Mounter (`nmounter`)
+
+**Description**:
+`nmounter` is a powerful and flexible CLI tool to mount and unmount SMB/CIFS network shares using reusable profiles. It simplifies working with NAS, servers, or any SMB-compatible storage by automating authentication, mount paths, and session handling.
+
+**Features**:
+
+- Profile-based configuration for multiple NAS/servers
+- Mount/unmount:
+  - Single share
+  - All shares from a profile
+
+- Session password reuse (prompt once per session)
+- Custom mount targets per share (`--target`)
+- Configurable base mount path per profile
+- Override profile values via CLI
+- Decorative profile listing with mount status
+- Custom config file support
+- Safe credential handling via temporary files
+- Smart validation (e.g., prevents `--target` misuse with `all`)
+
+**Dependencies**:
+
+- `cifs-utils` (provides `mount.cifs`)
+- `sudo` privileges for mount/umount
+
+Install on Arch:
+
+```bash
+sudo pacman -S cifs-utils
+```
+
+Install on Debian/Ubuntu:
+
+```bash
+sudo apt install cifs-utils
+```
+
+---
+
+**Usage**:
+
+```bash
+nmounter [share] [options]
+nmounter all [options]
+nmounter -share             # unmount share
+nmounter -all               # unmount all shares
+nmounter list               # list profiles + status
+nmounter config             # create/update profile
+```
+
+---
+
+**Options**:
+
+| Option           | Description                                        |
+| ---------------- | -------------------------------------------------- |
+| `-p, --profile`  | Use profile                                        |
+| `-H, --host`     | NAS host/IP                                        |
+| `-U, --username` | Username                                           |
+| `-P, --password` | Password                                           |
+| `-D, --domain`   | Domain (default: WORKGROUP)                        |
+| `-t, --target`   | Custom mount target (single only)                  |
+| `-c, --config`   | Config file (default: `~/.config/nmounter/config`) |
+| `-h, --help`     | Show help                                          |
+
+---
+
+**Examples**:
+
+🔹 Mount a single share:
+
+```bash
+nmounter Media -p home_nas
+```
+
+🔹 Mount all shares:
+
+```bash
+nmounter all -p home_nas
+```
+
+🔹 Unmount a share:
+
+```bash
+nmounter -Media -p home_nas
+```
+
+🔹 Mount with custom path:
+
+```bash
+nmounter Media -p home_nas -t /mnt/media
+```
+
+🔹 Use custom config:
+
+```bash
+nmounter all -p office_nas -c ~/configs/nas.conf
+```
+
+🔹 List profiles:
+
+```bash
+nmounter list
+```
+
+---
+
+**Configuration**:
+
+Default config file:
+
+```ini
+~/.config/nmounter/config
+```
+
+Example profile:
+
+```ini
+[home_nas]
+host=192.168.1.4
+user=jackson
+pass=your_password
+domain=WORKGROUP
+base_path=/home/jackson/NAS
+shares=Media,Personal,Archive
+```
+
+---
+
+**Sample Output (`nmounter list`)**:
+
+```txt
+📦 Available Profiles
+────────────────────────────────────────────
+
+🔹 Profile: home_nas
+   ├─ Host      : 192.168.1.4
+   ├─ User      : jackson
+   ├─ Base Path : /home/jackson/NAS
+   ├─ Shares:
+   │   ✅ Media
+   │   ⭕ Personal
+   │   ⭕ Archive
+
+Legend: ✅ Mounted | ⭕ Not Mounted
+```
 
 ---
 
