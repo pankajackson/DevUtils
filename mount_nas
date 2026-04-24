@@ -81,30 +81,48 @@ touch "$CONFIG_FILE"
 show_help() {
   cat <<EOF
 Description:
-  CLI tool to mount/unmount SMB/CIFS network shares with profile support.
+  Mount/unmount SMB/CIFS shares using profiles.
 
 Usage:
   nmounter [share] [options]
   nmounter all [options]
-  nmounter -share        (unmount)
-  nmounter -all          (unmount all)
+  nmounter -share             Unmount a share
+  nmounter -all               Unmount all shares
+  nmounter list               List profiles and mount status
+  nmounter config             Create/update profile
 
 Options:
-  -p, --profile NAME      Use profile
-  -H, --host HOST         NAS host/IP
-  -U, --username USER     Username
-  -P, --password PASS     Password
+  -p, --profile NAME      Use profile from config
+  -H, --host HOST         NAS host/IP (override profile)
+  -U, --username USER     Username (override profile)
+  -P, --password PASS     Password (override/session)
   -D, --domain DOMAIN     Domain (default: WORKGROUP)
+  -t, --target PATH       Custom mount target (single share only)
   -c, --config PATH       Config file (default: $CONFIG_FILE)
-  -t, --target PATH       Custom mount target (single only)
   -h, --help              Show help
 
 Examples:
-  nmounter Media -p home_nas
-  nmounter all -p home_nas
-  nmounter -Media -p home_nas
-  nmounter Media -t /mnt/media
-  nmounter list
+  Mount:
+    nmounter Media -p home_nas
+    nmounter all -p home_nas
+
+  Unmount:
+    nmounter -Media -p home_nas
+    nmounter -all -p home_nas
+
+  Custom target:
+    nmounter Media -t /mnt/media
+
+  Profile:
+    nmounter config
+    nmounter list
+
+Notes:
+  - '--target' works only with single share
+  - Password is prompted once per session if not stored
+  - Config file stores passwords in plain text (chmod 600 enforced)
+  - Mount base defaults to: $DEFAULT_MOUNT_BASE
+
 EOF
 }
 
@@ -499,6 +517,11 @@ action="$1"
 shift || true
 
 mode="mount"
+
+if [[ "$action" == "help" ]]; then
+  show_help
+  exit 0
+fi
 
 if [[ "$action" == -* ]]; then
   mode="unmount"
