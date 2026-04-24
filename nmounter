@@ -511,6 +511,119 @@ EOF
 }
 
 # --------------------------
+# Completion Utility
+# --------------------------
+setup_completion() {
+  local shell_name
+  shell_name=$(basename "$SHELL")
+
+  if [[ "$shell_name" == "bash" ]]; then
+    local dest="$HOME/.local/share/bash-completion/completions/nmounter"
+    mkdir -p "$(dirname "$dest")"
+
+    cat > "$dest" <<'EOF'
+_nmounter_complete() {
+  local cur prev
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+  local commands="all list config help completion"
+  local opts="-p --profile -H --host -U --username -P --password -D --domain -t --target -c --config -h --help"
+
+  if [[ ${COMP_CWORD} -eq 1 ]]; then
+    COMPREPLY=( $(compgen -W "$commands" -- "$cur") )
+    return
+  fi
+
+  if [[ "$prev" == "-p" || "$prev" == "--profile" ]]; then
+    if [[ -f "$HOME/.config/nmounter/config" ]]; then
+      local profiles
+      profiles=$(grep '^\[' "$HOME/.config/nmounter/config" | tr -d '[]')
+      COMPREPLY=( $(compgen -W "$profiles" -- "$cur") )
+    fi
+    return
+  fi
+
+  COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
+}
+
+complete -F _nmounter_complete nmounter
+EOF
+
+    echo "✅ Bash completion installed at: $dest"
+    source "$dest" 2>/dev/null && echo "⚡ Loaded for current shell"
+
+  elif [[ "$shell_name" == "zsh" ]]; then
+    local dest="$HOME/.zsh/completions/_nmounter"
+    mkdir -p "$(dirname "$dest")"
+
+    cat > "$dest" <<'EOF'
+#compdef nmounter
+
+_nmounter() {
+  local -a commands opts profiles
+
+  commands=(
+    "all:Mount all shares"
+    "list:List profiles"
+    "config:Configure profile"
+    "help:Show help"
+    "completion:Setup completion"
+  )
+
+  opts=(
+    "-p:profile:_nmounter_profiles"
+    "--profile:profile:_nmounter_profiles"
+    "-H:host"
+    "-U:username"
+    "-P:password"
+    "-D:domain"
+    "-t:target:_files"
+    "-c:config:_files"
+    "-h:help"
+  )
+
+  _arguments \
+    "1:command:->cmds" \
+    "*:option:->opts"
+
+  case $state in
+    cmds)
+      _describe "command" commands
+      ;;
+    opts)
+      _describe "option" opts
+      ;;
+  esac
+}
+
+_nmounter_profiles() {
+  if [[ -f "$HOME/.config/nmounter/config" ]]; then
+    grep '^\[' "$HOME/.config/nmounter/config" | tr -d '[]'
+  fi
+}
+
+compdef _nmounter nmounter
+EOF
+
+    echo "✅ Zsh completion installed at: $dest"
+
+    # Ensure fpath contains it
+    if ! echo "$fpath" | grep -q "$(dirname "$dest")"; then
+      echo "⚙️ Adding to fpath in ~/.zshrc"
+      echo "fpath+=(~/.zsh/completions)" >> ~/.zshrc
+    fi
+
+    echo "autoload -Uz compinit && compinit" >> ~/.zshrc
+
+    echo "⚡ Restart shell or run:"
+    echo "   autoload -Uz compinit && compinit"
+  else
+    echo "❌ Unsupported shell: $shell_name"
+  fi
+}
+
+# --------------------------
 # Entry
 # --------------------------
 action="$1"
@@ -545,6 +658,9 @@ case "$action" in
     ;;
   list)
     list_profiles
+    ;;
+  completion)
+    setup_completion
     ;;
   *)
     if [ "$mode" = "mount" ]; then
