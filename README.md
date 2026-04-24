@@ -672,20 +672,22 @@ smb_share list
 ### 9. Network Share Mounter (`nmounter`)
 
 **Description**:
-`nmounter` is a powerful and flexible CLI tool to mount and unmount SMB/CIFS network shares using reusable profiles. It simplifies working with NAS, servers, or any SMB-compatible storage by automating authentication, mount paths, and session handling.
+`nmounter` is a lightweight but powerful CLI tool to mount and unmount SMB/CIFS network shares using reusable profiles. It is designed for NAS workflows and supports both interactive and fully CLI-driven usage with bash and zsh completion.
+
+It handles authentication, mount paths, session reuse, and profile-based automation.
 
 **Features**:
 
 - Profile-based configuration for multiple NAS/servers
 - Mount/unmount:
   - Single share
-  - All shares from a profile
-
+  - All shares in a profile
 - Session password reuse (prompt once per session)
-- Custom mount targets per share (`--target`)
 - Configurable base mount path per profile
+- CLI override of all profile values
 - Override profile values via CLI
 - Decorative profile listing with mount status
+- Bash + Zsh completion support
 - Custom config file support
 - Safe credential handling via temporary files
 - Smart validation (e.g., prevents `--target` misuse with `all`)
@@ -707,20 +709,20 @@ Install on Debian/Ubuntu:
 sudo apt install cifs-utils
 ```
 
----
-
 **Usage**:
 
 ```bash
-nmounter [share] [options]
+nmounter <share> [options]
 nmounter all [options]
-nmounter -share             # unmount share
-nmounter -all               # unmount all shares
-nmounter list               # list profiles + status
-nmounter config             # create/update profile
-```
 
----
+nmounter -<share>        # unmount single share
+nmounter -all            # unmount all shares
+
+nmounter list            # list profiles + mount status
+nmounter config          # create/update profile
+nmounter completion      # install shell completion
+nmounter help            # show help
+```
 
 **Options**:
 
@@ -734,8 +736,6 @@ nmounter config             # create/update profile
 | `-t, --target`   | Custom mount target (single only)                  |
 | `-c, --config`   | Config file (default: `~/.config/nmounter/config`) |
 | `-h, --help`     | Show help                                          |
-
----
 
 **Examples**:
 
@@ -775,7 +775,11 @@ nmounter all -p office_nas -c ~/configs/nas.conf
 nmounter list
 ```
 
----
+🔹 Install completion:
+
+```bash
+nmounter completion
+```
 
 **Configuration**:
 
@@ -789,15 +793,13 @@ Example profile:
 
 ```ini
 [home_nas]
-host=192.168.1.4
-user=jackson
+host=10.0.1.56
+user=johnson
 pass=your_password
 domain=WORKGROUP
 base_path=/home/jackson/NAS
 shares=Media,Personal,Archive
 ```
-
----
 
 **Sample Output (`nmounter list`)**:
 
@@ -806,8 +808,8 @@ shares=Media,Personal,Archive
 ────────────────────────────────────────────
 
 🔹 Profile: home_nas
-   ├─ Host      : 192.168.1.4
-   ├─ User      : jackson
+   ├─ Host      : 10.0.1.56
+   ├─ User      : johnson
    ├─ Base Path : /home/jackson/NAS
    ├─ Shares:
    │   ✅ Media
@@ -816,6 +818,17 @@ shares=Media,Personal,Archive
 
 Legend: ✅ Mounted | ⭕ Not Mounted
 ```
+
+**Notes**:
+
+- Passwords in config are stored in plain text (use `chmod 600`)
+- Session password is reused during runtime to avoid repeated prompts
+- `--target` is only valid for single-share operations
+- Completion must be installed once using:
+
+  ```bash
+  nmounter completion
+  ```
 
 ---
 

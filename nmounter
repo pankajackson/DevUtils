@@ -4,18 +4,19 @@
 # Description: CLI tool to mount/unmount SMB/CIFS network shares using profiles.
 #
 # Author: Pankaj Jackson
-# Version: 1.0.0
-# Date: 2026-04-23
+# Version: 1.1.0
+# Date: 2026-04-24
 # License: MIT License
 # ==============================================================================
 #
 # Usage:
-#   nmounter [share] [options]
-#   nmounter all [options]
-#   nmounter -share             (unmount share)
-#   nmounter -all               (unmount all shares)
-#   nmounter list               (list profiles and mount status)
-#   nmounter config             (create/update profile)
+  # nmounter <share> [options]
+  # nmounter all [options]
+  # nmounter -<share>           Unmount share
+  # nmounter -all               Unmount all shares
+  # nmounter list               List profiles and mount status
+  # nmounter config             Create/update profile
+  # nmounter completion         Install bash/zsh completion
 #
 # Examples:
 #   nmounter Media -p home_nas
@@ -48,13 +49,14 @@
 #     shares=Media,Personal,Archive
 #
 # Features:
-#   - Profile-based SMB/CIFS access
-#   - Mount/unmount single or multiple shares
-#   - Session password reuse (prompt once)
-#   - Custom mount paths per share
-#   - Automatic mount directory creation
+#   - Profile-based SMB/CIFS mounting
+#   - Mount / unmount single or all shares
+#   - Interactive and CLI overrides
+#   - Persistent config (~/.config/nmounter/config)
+#   - Session password reuse
+#   - Auto mount directory creation
 #   - Mounted state detection
-#   - Decorative profile listing
+#   - Bash + Zsh completion support (auto installer)
 #
 # Dependencies:
 #   - mount.cifs (cifs-utils package)
@@ -83,25 +85,16 @@ show_help() {
 Description:
   Mount/unmount SMB/CIFS shares using profiles.
 
-Usage:
-  nmounter [share] [options]
+USAGE:
+  nmounter <share> [options]
   nmounter all [options]
-  nmounter -share             Unmount a share
+  nmounter -<share>           Unmount share
   nmounter -all               Unmount all shares
   nmounter list               List profiles and mount status
   nmounter config             Create/update profile
+  nmounter completion         Install bash/zsh completion
 
-Options:
-  -p, --profile NAME      Use profile from config
-  -H, --host HOST         NAS host/IP (override profile)
-  -U, --username USER     Username (override profile)
-  -P, --password PASS     Password (override/session)
-  -D, --domain DOMAIN     Domain (default: WORKGROUP)
-  -t, --target PATH       Custom mount target (single share only)
-  -c, --config PATH       Config file (default: $CONFIG_FILE)
-  -h, --help              Show help
-
-Examples:
+MODES:
   Mount:
     nmounter Media -p home_nas
     nmounter all -p home_nas
@@ -110,19 +103,39 @@ Examples:
     nmounter -Media -p home_nas
     nmounter -all -p home_nas
 
-  Custom target:
-    nmounter Media -t /mnt/media
+COMMANDS:
+  all         Mount/unmount all shares in profile
+  list        Show profiles and mount status
+  config      Create/update profile interactively
+  completion  Install shell completion (bash + zsh)
+  help        Show help
 
-  Profile:
-    nmounter config
-    nmounter list
+OPTIONS:
+  -p, --profile NAME      Profile from config
+  -H, --host HOST         Override NAS host
+  -U, --username USER     Override username
+  -P, --password PASS     Override password / session
+  -D, --domain DOMAIN     SMB domain (default: WORKGROUP)
+  -t, --target PATH       Custom mount path (single share only)
+  -c, --config PATH       Config file path
+  -h, --help              Show help
 
-Notes:
-  - '--target' works only with single share
-  - Password is prompted once per session if not stored
-  - Config file stores passwords in plain text (chmod 600 enforced)
-  - Mount base defaults to: $DEFAULT_MOUNT_BASE
+CONFIG:
+  Default: ~/.config/nmounter/config
 
+Example profile:
+  [home_nas]
+  host=10.0.1.55
+  user=john
+  pass=secret
+  domain=WORKGROUP
+  base_path=/home/john/NAS
+  shares=Media,Personal,Archive
+
+NOTES:
+  - Password stored in plain text (chmod 600 enforced)
+  - Session password reused during runtime
+  - Completion is shell-aware (bash + zsh)
 EOF
 }
 
