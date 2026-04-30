@@ -1,0 +1,719 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# Script Name: nmounter
+# Description: CLI tool to mount/unmount SMB/CIFS network shares using profiles.
+#
+# Author: Pankaj Jackson
+# Version: 1.1.0
+# Date: 2026-04-24
+# License: MIT License
+# ==============================================================================
+#
+# Usage:
+  # nmounter <share> [options]
+  # nmounter all [options]
+  # nmounter -<share>           Unmount share
+  # nmounter -all               Unmount all shares
+  # nmounter list               List profiles and mount status
+  # nmounter config             Create/update profile
+  # nmounter completion         Install bash/zsh completion
+#
+# Examples:
+#   nmounter Media -p home_nas
+#   nmounter all -p home_nas
+#   nmounter -Media -p home_nas
+#   nmounter Media -t /mnt/media
+#   nmounter list
+#
+# Options:
+#   -p, --profile NAME      Use profile from config
+#   -H, --host HOST         NAS host/IP (overrides profile)
+#   -U, --username USER     Username (overrides profile)
+#   -P, --password PASS     Password (overrides profile/session)
+#   -D, --domain DOMAIN     Domain (default: WORKGROUP)
+#   -t, --target PATH       Custom mount target (single share only)
+#   -c, --config PATH       Custom config file path
+#   -h, --help              Show help
+#
+# Configuration:
+#   Default config path:
+#     ~/.config/nmounter/config
+#
+#   Example profile:
+#     [home_nas]
+#     host=192.168.1.4
+#     user=john
+#     pass=your_password
+#     domain=WORKGROUP
+#     base_path=/home/john/NAS
+#     shares=Media,Personal,Archive
+#
+# Features:
+#   - Profile-based SMB/CIFS mounting
+#   - Mount / unmount single or all shares
+#   - Interactive and CLI overrides
+#   - Persistent config (~/.config/nmounter/config)
+#   - Session password reuse
+#   - Auto mount directory creation
+#   - Mounted state detection
+#   - Bash + Zsh completion support (auto installer)
+#
+# Dependencies:
+#   - mount.cifs (cifs-utils package)
+#   - sudo privileges for mount/umount
+#
+# Notes:
+#   - Passwords stored in config are plain text (chmod 600 enforced)
+#   - Use profiles for convenience, CLI args for overrides
+#   - '--target' is only valid for single share operations
+#
+# ==============================================================================
+
+CONFIG_FILE="$HOME/.config/nmounter/config"
+DEFAULT_MOUNT_BASE="$HOME/NAS"
+MOUNT_BASE="$DEFAULT_MOUNT_BASE"
+SESSION_PASS=""
+
+mkdir -p "$(dirname "$CONFIG_FILE")"
+touch "$CONFIG_FILE"
+
+# --------------------------
+# Help
+# --------------------------
+show_help() {
+  cat <<EOF
+Description:
+  Mount/unmount SMB/CIFS shares using profiles.
+
+USAGE:
+  nmounter <share> [options]
+  nmounter all [options]
+  nmounter -<share>           Unmount share
+  nmounter -all               Unmount all shares
+  nmounter list               List profiles and mount status
+  nmounter config             Create/update profile
+  nmounter completion         Install bash/zsh completion
+
+MODES:
+  Mount:
+    nmounter Media -p home_nas
+    nmounter all -p home_nas
+
+  Unmount:
+    nmounter -Media -p home_nas
+    nmounter -all -p home_nas
+
+COMMANDS:
+  all         Mount/unmount all shares in profile
+  list        Show profiles and mount status
+  config      Create/update profile interactively
+  completion  Install shell completion (bash + zsh)
+  help        Show help
+
+OPTIONS:
+  -p, --profile NAME      Profile from config
+  -H, --host HOST         Override NAS host
+  -U, --username USER     Override username
+  -P, --password PASS     Override password / session
+  -D, --domain DOMAIN     SMB domain (default: WORKGROUP)
+  -t, --target PATH       Custom mount path (single share only)
+  -c, --config PATH       Config file path
+  -h, --help              Show help
+
+CONFIG:
+  Default: ~/.config/nmounter/config
+
+Example profile:
+  [home_nas]
+  host=10.0.1.55
+  user=john
+  pass=secret
+  domain=WORKGROUP
+  base_path=/home/john/NAS
+  shares=Media,Personal,Archive
+
+NOTES:
+  - Password stored in plain text (chmod 600 enforced)
+  - Session password reused during runtime
+  - Completion is shell-aware (bash + zsh)
+EOF
+}
+
+# --------------------------
+# Global args
+# --------------------------
+ARGS=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -c|--config)
+      CONFIG_FILE="$2"
+      shift 2
+      ;;
+    -h|--help)
+      show_help
+      exit 0
+      ;;
+    *)
+      ARGS+=("$1")
+      shift
+      ;;
+  esac
+done
+set -- "${ARGS[@]}"
+
+mkdir -p "$(dirname "$CONFIG_FILE")"
+touch "$CONFIG_FILE"
+
+# --------------------------
+# Config helpers
+# --------------------------
+get_config() {
+  local profile="$1"
+  local key="$2"
+
+  awk -F '=' -v section="[$profile]" -v key="$key" '
+    $0 == section { found=1; next }
+    /^\[/ { found=0 }
+    found && $1 == key { print $2; exit }
+  ' "$CONFIG_FILE"
+}
+
+get_base_path() {
+  local profile="$1"
+  local base
+  base=$(get_config "$profile" "base_path")
+  [ -n "$base" ] && echo "$base" || echo "$DEFAULT_MOUNT_BASE"
+}
+
+list_profiles() {
+  local profiles
+  profiles=$(grep "^\[" "$CONFIG_FILE" | tr -d '[]')
+
+  if [ -z "$profiles" ]; then
+    echo "❌ No profiles found"
+    return
+  fi
+
+  echo "📦 Available Profiles"
+  echo "────────────────────────────────────────────"
+
+  for profile in $profiles; do
+    local host user base shares
+
+    host=$(get_config "$profile" "host")
+    user=$(get_config "$profile" "user")
+    base=$(get_base_path "$profile")
+    shares=$(get_config "$profile" "shares")
+
+    echo
+    echo "🔹 Profile: $profile"
+    echo "   ├─ Host      : ${host:-N/A}"
+    echo "   ├─ User      : ${user:-N/A}"
+    echo "   ├─ Base Path : $base"
+    
+    if [ -n "$shares" ]; then
+      echo "   ├─ Shares:"
+      
+      IFS=',' read -ra list <<< "$shares"
+      for s in "${list[@]}"; do
+        local mount_point="$base/$s"
+
+        if is_mounted "$mount_point"; then
+          echo "   │   ✅ $s"
+        else
+          echo "   │   ⭕ $s"
+        fi
+      done
+    else
+      echo "   └─ Shares    : ❌ None defined"
+    fi
+  done
+
+  echo
+  echo "Legend: ✅ Mounted | ⭕ Not Mounted"
+}
+
+# --------------------------
+# Utils
+# --------------------------
+clean_input() {
+  local val="$1"
+  val="$(printf "%s" "$val" | tr -d '\r\n')"
+  val="${val#"${val%%[![:space:]]*}"}"
+  val="${val%"${val##*[![:space:]]}"}"
+  echo -n "$val"
+}
+
+prompt() {
+  local text="$1"
+  local secret="$2"
+  local val
+
+  if [ "$secret" = "true" ]; then
+    read -s -p "$text: " val
+    echo
+  else
+    read -p "$text: " val
+  fi
+
+  clean_input "$val"
+}
+
+is_mounted() {
+  mount | grep -q "on $1 "
+}
+
+# --------------------------
+# Resolve password
+# --------------------------
+resolve_pass() {
+  local profile="$1"
+  local cli_pass="$2"
+
+  if [ -n "$cli_pass" ]; then
+    pass="$cli_pass"
+    return
+  fi
+
+  if [ -n "$SESSION_PASS" ]; then
+    pass="$SESSION_PASS"
+    return
+  fi
+
+  local cfg_pass
+  cfg_pass=$(get_config "$profile" "pass")
+
+  if [ -n "$cfg_pass" ]; then
+    pass="$cfg_pass"
+    return
+  fi
+
+  SESSION_PASS=$(prompt "Enter password" true)
+  pass="$SESSION_PASS"
+}
+
+# --------------------------
+# Mount single
+# --------------------------
+mount_nas() {
+  local share="$1"
+  shift
+
+  local host=""
+  local user=""
+  local pass=""
+  local domain=""
+  local profile="default"
+  local target_path=""
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -H|--host) host="$2"; shift 2 ;;
+      -U|--username) user="$2"; shift 2 ;;
+      -P|--password) pass="$2"; shift 2 ;;
+      -D|--domain) domain="$2"; shift 2 ;;
+      -p|--profile) profile="$2"; shift 2 ;;
+      -t|--target) target_path="$2"; shift 2 ;;
+      *) shift ;;
+    esac
+  done
+
+  MOUNT_BASE=$(get_base_path "$profile")
+
+  if [ -n "$target_path" ]; then
+    mount_point="$target_path"
+  else
+    mount_point="$MOUNT_BASE/$share"
+  fi
+
+  mkdir -p "$mount_point"
+
+  if is_mounted "$mount_point"; then
+    echo "⚠️  $share already mounted"
+    return 0
+  fi
+
+  [ -z "$host" ] && host=$(get_config "$profile" "host")
+  [ -z "$user" ] && user=$(get_config "$profile" "user")
+  [ -z "$domain" ] && domain=$(get_config "$profile" "domain")
+  [ -z "$domain" ] && domain="WORKGROUP"
+
+  resolve_pass "$profile" "$pass"
+
+  [ -z "$host" ] && host=$(prompt "Enter NAS host/IP")
+  [ -z "$user" ] && user=$(prompt "Enter username")
+
+  if [ -z "$host" ] || [ -z "$user" ]; then
+    echo "❌ Missing required details"
+    return 1
+  fi
+
+  cred=$(mktemp)
+  chmod 600 "$cred"
+
+  printf "username=%s\npassword=%s\ndomain=%s\n" \
+    "$user" "$(clean_input "$pass")" "$domain" > "$cred"
+
+  sudo mount -t cifs "//$host/$share" "$mount_point" \
+    -o credentials="$cred",vers=3.0,sec=ntlmssp,uid=$(id -u),gid=$(id -g),iocharset=utf8
+
+  status=$?
+  rm -f "$cred"
+
+  if [ $status -eq 0 ]; then
+    echo "✅ Mounted $share → $mount_point"
+  else
+    echo "❌ Failed to mount //$host/$share"
+  fi
+}
+
+# --------------------------
+# Mount all
+# --------------------------
+mount_all() {
+  local profile="default"
+  local extra_args=()
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -p|--profile)
+        profile="$2"
+        extra_args+=("$1" "$2")
+        shift 2
+        ;;
+      -t|--target)
+        echo "❌ --target (-t) is only valid for single share mount"
+        return 1
+        ;;
+      *)
+        extra_args+=("$1")
+        shift
+        ;;
+    esac
+  done
+
+  shares=$(get_config "$profile" "shares")
+
+  if [ -z "$shares" ]; then
+    echo "❌ No shares defined in profile '$profile'"
+    return 1
+  fi
+
+  IFS=',' read -ra list <<< "$shares"
+
+  for s in "${list[@]}"; do
+    mount_nas "$s" "${extra_args[@]}"
+  done
+}
+
+# --------------------------
+# Unmount single (FIXED)
+# --------------------------
+unmount_nas() {
+  local share="$1"
+  shift
+
+  local profile="default"
+  local target_path=""
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -p|--profile)
+        profile="$2"
+        shift 2
+        ;;
+      -t|--target)
+        target_path="$2"
+        shift 2
+        ;;
+      *)
+        shift
+        ;;
+    esac
+  done
+
+  local mount_point
+
+  if [ -n "$target_path" ]; then
+    mount_point="$target_path"
+  else
+    local base
+    base=$(get_base_path "$profile")
+    mount_point="$base/$share"
+  fi
+
+  if ! is_mounted "$mount_point"; then
+    echo "⚠️  $share is not mounted at $mount_point"
+    return 0
+  fi
+
+  sudo umount "$mount_point"
+
+  if [ $? -eq 0 ]; then
+    echo "🗑️ Unmounted $share → $mount_point"
+  else
+    echo "❌ Failed to unmount $share"
+  fi
+}
+
+# --------------------------
+# Unmount all (FIXED)
+# --------------------------
+unmount_all() {
+  local profile="default"
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -p|--profile)
+        profile="$2"
+        shift 2
+        ;;
+      -t|--target)
+        echo "❌ --target (-t) is only valid for single share unmount"
+        return 1
+        ;;
+      *)
+        shift
+        ;;
+    esac
+  done
+
+  shares=$(get_config "$profile" "shares")
+
+  if [ -z "$shares" ]; then
+    echo "❌ No shares defined in profile '$profile'"
+    return 1
+  fi
+
+  IFS=',' read -ra list <<< "$shares"
+
+  for s in "${list[@]}"; do
+    unmount_nas "$s" -p "$profile"
+  done
+}
+
+# --------------------------
+# Config
+# --------------------------
+config_profile() {
+  read -p "Profile: " profile
+  read -p "Host: " host
+  read -p "User: " user
+  read -s -p "Pass: " pass; echo
+  read -p "Domain [WORKGROUP]: " domain
+  read -p "Base path [$DEFAULT_MOUNT_BASE]: " base_path
+  read -p "Shares: " shares
+
+  [ -z "$domain" ] && domain="WORKGROUP"
+  [ -z "$base_path" ] && base_path="$DEFAULT_MOUNT_BASE"
+
+  sed -i "/^\[$profile\]/,/^\[/d" "$CONFIG_FILE"
+
+  cat >> "$CONFIG_FILE" <<EOF
+[$profile]
+host=$host
+user=$user
+pass=$pass
+domain=$domain
+base_path=$base_path
+shares=$shares
+EOF
+
+  chmod 600 "$CONFIG_FILE"
+  echo "✅ Profile saved"
+}
+
+# --------------------------
+# Completion Utility
+# --------------------------
+setup_completion() {
+  local shell_name
+  shell_name=$(basename "$SHELL")
+
+  # --------------------------
+  # BASH COMPLETION
+  # --------------------------
+  if [[ "$shell_name" == "bash" ]]; then
+    local dest="$HOME/.local/share/bash-completion/completions/nmounter"
+    mkdir -p "$(dirname "$dest")"
+
+    cat > "$dest" <<'EOF'
+_nmounter_complete() {
+  local cur prev
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+  local commands="all list config help completion"
+  local opts=""
+
+  # First argument → commands
+  if [[ ${COMP_CWORD} -eq 1 ]]; then
+    COMPREPLY=( $(compgen -W "$commands" -- "$cur") )
+    return
+  fi
+
+  # Context-aware options
+  case "${COMP_WORDS[1]}" in
+    all)
+      opts="-p --profile -H --host -U --username -P --password -D --domain -c --config -h --help"
+      ;;
+    *)
+      opts="-p --profile -H --host -U --username -P --password -D --domain -t --target -c --config -h --help"
+      ;;
+  esac
+
+  # Profile completion
+  if [[ "$prev" == "-p" || "$prev" == "--profile" ]]; then
+    if [[ -f "$HOME/.config/nmounter/config" ]]; then
+      local profiles
+      profiles=$(grep '^\[' "$HOME/.config/nmounter/config" | tr -d '[]')
+      COMPREPLY=( $(compgen -W "$profiles" -- "$cur") )
+    fi
+    return
+  fi
+
+  COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
+}
+
+complete -F _nmounter_complete nmounter
+EOF
+
+    echo "✅ Bash completion installed at: $dest"
+    source "$dest" 2>/dev/null && echo "⚡ Loaded for current shell"
+
+  # --------------------------
+  # ZSH COMPLETION
+  # --------------------------
+  elif [[ "$shell_name" == "zsh" ]]; then
+    local dest="$HOME/.zsh/completions/_nmounter"
+    mkdir -p "$(dirname "$dest")"
+
+    cat > "$dest" <<'EOF'
+#compdef nmounter
+
+_nmounter() {
+  local -a commands opts
+
+  commands=(
+    "all:Mount all shares"
+    "list:List profiles"
+    "config:Configure profile"
+    "help:Show help"
+    "completion:Setup completion"
+  )
+
+  # Context-aware options
+  if [[ "$words[2]" == "all" ]]; then
+    opts=(
+      "-p:profile:_nmounter_profiles"
+      "--profile:profile:_nmounter_profiles"
+      "-H:host"
+      "-U:username"
+      "-P:password"
+      "-D:domain"
+      "-c:config:_files"
+      "-h:help"
+    )
+  else
+    opts=(
+      "-p:profile:_nmounter_profiles"
+      "--profile:profile:_nmounter_profiles"
+      "-H:host"
+      "-U:username"
+      "-P:password"
+      "-D:domain"
+      "-t:target:_files"
+      "-c:config:_files"
+      "-h:help"
+    )
+  fi
+
+  _arguments \
+    "1:command:->cmds" \
+    "*:option:->opts"
+
+  case $state in
+    cmds)
+      _describe "command" commands
+      ;;
+    opts)
+      _describe "option" opts
+      ;;
+  esac
+}
+
+_nmounter_profiles() {
+  if [[ -f "$HOME/.config/nmounter/config" ]]; then
+    grep '^\[' "$HOME/.config/nmounter/config" | tr -d '[]'
+  fi
+}
+
+compdef _nmounter nmounter
+EOF
+
+    echo "✅ Zsh completion installed at: $dest"
+
+    # Ensure zsh loads it
+    if ! grep -q 'fpath+=.*\.zsh/completions' ~/.zshrc 2>/dev/null; then
+      echo 'fpath+=(~/.zsh/completions)' >> ~/.zshrc
+    fi
+
+    if ! grep -q 'compinit' ~/.zshrc 2>/dev/null; then
+      echo 'autoload -Uz compinit && compinit' >> ~/.zshrc
+    fi
+
+    echo "⚡ Run this or restart shell:"
+    echo "   autoload -Uz compinit && compinit"
+
+  else
+    echo "❌ Unsupported shell: $shell_name"
+  fi
+}
+
+# --------------------------
+# Entry
+# --------------------------
+action="$1"
+shift || true
+
+mode="mount"
+
+if [[ "$action" == "help" ]]; then
+  show_help
+  exit 0
+fi
+
+if [[ "$action" == -* ]]; then
+  mode="unmount"
+  action="${action#-}"
+fi
+
+case "$action" in
+  ""|-h|--help)
+    show_help
+    exit 0
+    ;;
+  all)
+    if [ "$mode" = "mount" ]; then
+      mount_all "$@" || exit 1
+    else
+      unmount_all "$@" || exit 1
+    fi
+    ;;
+  config)
+    config_profile
+    ;;
+  list)
+    list_profiles
+    ;;
+  completion)
+    setup_completion
+    ;;
+  *)
+    if [ "$mode" = "mount" ]; then
+      mount_nas "$action" "$@" || exit 1
+    else
+      unmount_nas "$action" "$@" || exit 1
+    fi
+    ;;
+esac
