@@ -626,7 +626,14 @@ config_profile() {
   input=$(clean_input "$input")
   if [ "$input" = "-" ]; then extra_opts=""; elif [ -z "$input" ]; then extra_opts="$cur_extra_opts"; else extra_opts="$input"; fi
 
-  sed -i "/^\[$profile\]/,/^\[/d" "$CONFIG_FILE"
+  local tmpfile
+  tmpfile=$(mktemp)
+  awk -v section="[$profile]" '
+    $0 == section { skip=1; next }
+    /^\[/ { skip=0 }
+    !skip { print }
+  ' "$CONFIG_FILE" > "$tmpfile"
+  mv "$tmpfile" "$CONFIG_FILE"
 
   {
     echo "[$profile]"
