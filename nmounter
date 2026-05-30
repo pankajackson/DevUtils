@@ -523,19 +523,108 @@ unmount_all() {
 # Config
 # --------------------------
 config_profile() {
-  read -p "Profile: " profile
-  read -p "Host: " host
-  read -p "User: " user
-  read -s -p "Pass: " pass; echo
-  read -p "Domain [WORKGROUP]: " domain
-  read -p "Base path [$DEFAULT_MOUNT_BASE]: " base_path
-  read -p "Shares: " shares
-  read -p "Enable mfsymlinks? [yes/no, default: no]: " mfsymlinks
-  read -p "Extra mount opts (comma-separated, leave blank for none): " extra_opts
+  local existing_profiles=()
+  mapfile -t existing_profiles < <(grep "^\[" "$CONFIG_FILE" 2>/dev/null | tr -d '[]')
 
-  [ -z "$domain" ] && domain="WORKGROUP"
-  [ -z "$base_path" ] && base_path="$DEFAULT_MOUNT_BASE"
-  [ -z "$mfsymlinks" ] && mfsymlinks="no"
+  local profile=""
+
+  if [ ${#existing_profiles[@]} -gt 0 ]; then
+    echo
+    echo "📦 Existing Profiles"
+    echo "────────────────────────────────────────────"
+    for i in "${!existing_profiles[@]}"; do
+      printf "  [%d] %s\n" "$((i+1))" "${existing_profiles[$i]}"
+    done
+    echo "  [n] Create new profile"
+    echo
+
+    local choice
+    read -p "Select profile to edit or 'n' for new: " choice
+
+    if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le ${#existing_profiles[@]} ]; then
+      profile="${existing_profiles[$((choice-1))]}"
+      echo "✏️  Editing profile: $profile"
+    elif [[ "$choice" == "n" || "$choice" == "N" ]]; then
+      profile=""
+    else
+      echo "❌ Invalid selection"
+      return 1
+    fi
+  fi
+
+  if [ -z "$profile" ]; then
+    while true; do
+      read -p "New profile name: " profile
+      profile=$(clean_input "$profile")
+      if [ -z "$profile" ]; then
+        echo "❌ Profile name cannot be blank"
+      else
+        break
+      fi
+    done
+    IS_NEW=true
+  else
+    IS_NEW=false
+  fi
+
+  local cur_host cur_user cur_pass cur_domain cur_base_path cur_shares cur_mfsymlinks cur_extra_opts
+
+  if [ "$IS_NEW" = false ]; then
+    cur_host=$(get_config "$profile" "host")
+    cur_user=$(get_config "$profile" "user")
+    cur_pass=$(get_config "$profile" "pass")
+    cur_domain=$(get_config "$profile" "domain")
+    cur_base_path=$(get_config "$profile" "base_path")
+    cur_shares=$(get_config "$profile" "shares")
+    cur_mfsymlinks=$(get_config "$profile" "mfsymlinks")
+    cur_extra_opts=$(get_config "$profile" "extra_opts")
+  fi
+
+  [ -z "$cur_domain" ]     && cur_domain="WORKGROUP"
+  [ -z "$cur_base_path" ]  && cur_base_path="$DEFAULT_MOUNT_BASE"
+  [ -z "$cur_mfsymlinks" ] && cur_mfsymlinks="no"
+
+  echo
+  echo "ℹ️  Press Enter to keep the current value shown in [brackets]"
+  echo
+
+  local input host user pass domain base_path shares mfsymlinks extra_opts
+
+  read -p "Host [${cur_host}]: " input
+  host=$(clean_input "$input")
+  [ -z "$host" ] && host="$cur_host"
+
+  read -p "User [${cur_user}]: " input
+  user=$(clean_input "$input")
+  [ -z "$user" ] && user="$cur_user"
+
+  read -s -p "Pass [${cur_pass:+(set)}]: " input; echo
+  pass=$(clean_input "$input")
+  [ -z "$pass" ] && pass="$cur_pass"
+
+  read -p "Domain [${cur_domain}]: " input
+  domain=$(clean_input "$input")
+  [ -z "$domain" ] && domain="$cur_domain"
+
+  read -p "Base path [${cur_base_path}]: " input
+  base_path=$(clean_input "$input")
+  [ -z "$base_path" ] && base_path="$cur_base_path"
+
+  read -p "Shares [${cur_shares}]: " input
+  shares=$(clean_input "$input")
+  [ -z "$shares" ] && shares="$cur_shares"
+
+  read -p "Enable mfsymlinks? yes/no [${cur_mfsymlinks}]: " input
+  mfsymlinks=$(clean_input "$input")
+  [ -z "$mfsymlinks" ] && mfsymlinks="$cur_mfsymlinks"
+  if [[ "$mfsymlinks" != "yes" && "$mfsymlinks" != "no" ]]; then
+    echo "⚠️  Invalid value for mfsymlinks, defaulting to 'no'"
+    mfsymlinks="no"
+  fi
+
+  read -p "Extra mount opts [${cur_extra_opts:-(none)}]: " input
+  extra_opts=$(clean_input "$input")
+  [ -z "$extra_opts" ] && extra_opts="$cur_extra_opts"
 
   sed -i "/^\[$profile\]/,/^\[/d" "$CONFIG_FILE"
 
