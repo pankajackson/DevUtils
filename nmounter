@@ -585,46 +585,46 @@ config_profile() {
   [ -z "$cur_mfsymlinks" ] && cur_mfsymlinks="no"
 
   echo
-  echo "ℹ️  Press Enter to keep the current value shown in [brackets]"
+  echo "ℹ️  Press Enter to keep the current value shown in [brackets]. Type '-' to clear a field."
   echo
 
   local input host user pass domain base_path shares mfsymlinks extra_opts
 
   read -p "Host [${cur_host}]: " input
-  host=$(clean_input "$input")
-  [ -z "$host" ] && host="$cur_host"
+  input=$(clean_input "$input")
+  if [ "$input" = "-" ]; then host=""; elif [ -z "$input" ]; then host="$cur_host"; else host="$input"; fi
 
   read -p "User [${cur_user}]: " input
-  user=$(clean_input "$input")
-  [ -z "$user" ] && user="$cur_user"
+  input=$(clean_input "$input")
+  if [ "$input" = "-" ]; then user=""; elif [ -z "$input" ]; then user="$cur_user"; else user="$input"; fi
 
   read -s -p "Pass [${cur_pass:+(set)}]: " input; echo
-  pass=$(clean_input "$input")
-  [ -z "$pass" ] && pass="$cur_pass"
+  input=$(clean_input "$input")
+  if [ "$input" = "-" ]; then pass=""; elif [ -z "$input" ]; then pass="$cur_pass"; else pass="$input"; fi
 
   read -p "Domain [${cur_domain}]: " input
-  domain=$(clean_input "$input")
-  [ -z "$domain" ] && domain="$cur_domain"
+  input=$(clean_input "$input")
+  if [ "$input" = "-" ]; then domain=""; elif [ -z "$input" ]; then domain="$cur_domain"; else domain="$input"; fi
 
   read -p "Base path [${cur_base_path}]: " input
-  base_path=$(clean_input "$input")
-  [ -z "$base_path" ] && base_path="$cur_base_path"
+  input=$(clean_input "$input")
+  if [ "$input" = "-" ]; then base_path=""; elif [ -z "$input" ]; then base_path="$cur_base_path"; else base_path="$input"; fi
 
   read -p "Shares [${cur_shares}]: " input
-  shares=$(clean_input "$input")
-  [ -z "$shares" ] && shares="$cur_shares"
+  input=$(clean_input "$input")
+  if [ "$input" = "-" ]; then shares=""; elif [ -z "$input" ]; then shares="$cur_shares"; else shares="$input"; fi
 
   read -p "Enable mfsymlinks? yes/no [${cur_mfsymlinks}]: " input
-  mfsymlinks=$(clean_input "$input")
-  [ -z "$mfsymlinks" ] && mfsymlinks="$cur_mfsymlinks"
+  input=$(clean_input "$input")
+  if [ "$input" = "-" ]; then mfsymlinks="no"; elif [ -z "$input" ]; then mfsymlinks="$cur_mfsymlinks"; else mfsymlinks="$input"; fi
   if [[ "$mfsymlinks" != "yes" && "$mfsymlinks" != "no" ]]; then
     echo "⚠️  Invalid value for mfsymlinks, defaulting to 'no'"
     mfsymlinks="no"
   fi
 
   read -p "Extra mount opts [${cur_extra_opts:-(none)}]: " input
-  extra_opts=$(clean_input "$input")
-  [ -z "$extra_opts" ] && extra_opts="$cur_extra_opts"
+  input=$(clean_input "$input")
+  if [ "$input" = "-" ]; then extra_opts=""; elif [ -z "$input" ]; then extra_opts="$cur_extra_opts"; else extra_opts="$input"; fi
 
   sed -i "/^\[$profile\]/,/^\[/d" "$CONFIG_FILE"
 
