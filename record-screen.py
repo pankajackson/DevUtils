@@ -30,6 +30,74 @@ class ScreenRecorder:
 
         return x, y, w, h
 
+    def _ffmpeg_has_encoder(self, encoder: str) -> bool:
+        """Check whether FFmpeg supports a specific encoder."""
+        result = subprocess.run(
+            ["ffmpeg", "-hide_banner", "-encoders"],
+            capture_output=True,
+            text=True,
+        )
+        return encoder in result.stdout
+
+    def _video_encoder_args(self) -> list[str]:
+        """
+        Choose the best available video encoder dynamically.
+        Returns FFmpeg arguments for video encoding.
+        """
+
+        # NVIDIA NVENC
+        if self._ffmpeg_has_encoder("h264_nvenc"):
+            print("Using NVIDIA NVENC encoder")
+            return [
+                "-c:v",
+                "h264_nvenc",
+                "-preset",
+                "p5",
+                "-cq",
+                "23",
+                "-pix_fmt",
+                "yuv420p",
+            ]
+
+        # Intel Quick Sync
+        if self._ffmpeg_has_encoder("h264_qsv"):
+            print("Using Intel Quick Sync encoder")
+            return [
+                "-c:v",
+                "h264_qsv",
+                "-global_quality",
+                "23",
+                "-pix_fmt",
+                "yuv420p",
+            ]
+
+        # VAAPI (Intel / AMD)
+        if self._ffmpeg_has_encoder("h264_vaapi"):
+            print("Using VAAPI encoder")
+            return [
+                "-vaapi_device",
+                "/dev/dri/renderD128",
+                "-vf",
+                "format=nv12,hwupload",
+                "-c:v",
+                "h264_vaapi",
+                "-qp",
+                "23",
+            ]
+
+        # CPU fallback
+        print("Using CPU libx264 encoder")
+        return [
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-crf",
+            "23",
+            "-pix_fmt",
+            "yuv420p",
+        ]
+
     def start_recording(self, fps: int = 60) -> str:
         if self.is_recording():
             raise RuntimeError("Recording already in progress")
@@ -47,6 +115,9 @@ class ScreenRecorder:
             ["pactl", "get-default-source"],
             text=True,
         ).strip()
+
+        # Dynamic video encoder
+        video_args = self._video_encoder_args()
 
         cmd = [
             "ffmpeg",
@@ -81,15 +152,8 @@ class ScreenRecorder:
             "cfr",
             "-async",
             "1",
-            # Video encoding (NVIDIA GPU)
-            "-c:v",
-            "h264_nvenc",
-            "-preset",
-            "p5",
-            "-cq",
-            "23",
-            "-pix_fmt",
-            "yuv420p",
+            # Video encoding
+            *video_args,
             # Audio encoding
             "-c:a",
             "aac",
@@ -175,11 +239,15 @@ if __name__ == "__main__":
 
     try:
         while rec.is_recording():
-            print(f"REC ● {rec.elapsed_time()}", end="\r", flush=True)
+            print(f"\rREC ● {rec.elapsed_time()}", end="", flush=True)
             time.sleep(1)
 
     except KeyboardInterrupt:
-        print("\nStopping recording...")
+        # Clear the current terminal line and move to column 0
+        print("\r\033[2K", end="", flush=True)
+
+        print("Stopping recording...")
+
         rec.stop_recording()
 
         actual = rec.recorded_duration()
