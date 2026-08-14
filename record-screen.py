@@ -84,12 +84,13 @@ class ScreenRecorder:
         self.start_ts = time.time()
         return self.out_file
 
-    def is_recording(self):
+    def is_recording(self) -> bool:
         return self.process is not None and self.process.poll() is None
 
-    def elapsed_seconds(self):
-        if not self.is_recording():
+    def elapsed_seconds(self) -> int:
+        if not self.is_recording() or self.start_ts is None:
             return 0
+
         return int(time.time() - self.start_ts)
 
     def elapsed_time(self):
@@ -98,16 +99,17 @@ class ScreenRecorder:
     def output_file(self):
         return self.out_file
 
-    def stop_recording(self):
-        if not self.is_recording():
+    def stop_recording(self) -> bool:
+        proc = self.process
+
+        if proc is None or proc.poll() is not None:
             return False
 
         # Graceful stop
-        self.process.send_signal(signal.SIGINT)
-        self.process.wait(timeout=10)
+        proc.send_signal(signal.SIGINT)
+        proc.wait(timeout=10)
 
         self.process = None
-        self.start_ts = None
         return True
 
 
