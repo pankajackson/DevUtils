@@ -1,3 +1,98 @@
+#!/usr/bin/env python3
+# ==============================================================================
+# Script Name: record-screen
+# Description: Simple screen recording utility using FFmpeg and slop with
+#              automatic hardware encoder detection and audio capture.
+#
+# Author: Pankaj Jackson
+# Version: 1.0.0
+# Date: 2026-08-14
+# License: MIT License
+# ==============================================================================
+#
+# Usage:
+#   record-screen
+#   python record-screen.py
+#
+# Description:
+#   Select a screen region with slop and record it using FFmpeg.
+#
+# Features:
+#   - Interactive screen-region selection using slop
+#   - 60 FPS recording by default
+#   - Dynamic hardware encoder detection
+#   - NVIDIA NVENC support
+#   - Intel Quick Sync support
+#   - VAAPI support for Intel / AMD GPUs
+#   - Automatic CPU libx264 fallback
+#   - PulseAudio/PipeWire audio capture
+#   - Automatic default audio-source detection
+#   - AAC audio encoding
+#   - MKV output format
+#   - Graceful FFmpeg shutdown
+#   - Accurate saved-file duration using ffprobe
+#   - Real-time recording elapsed-time display
+#   - Automatic even-dimension adjustment for H.264
+#   - Dependency validation before recording
+#   - Clear error messages and meaningful exit codes
+#
+# Output:
+#   ~/Videos/Recordings/recording-YYYY-MM-DD_HH-MM-SS.mkv
+#
+# Dependencies:
+#   - ffmpeg
+#   - ffprobe
+#   - slop
+#   - pactl
+#
+# Optional Hardware Acceleration:
+#   - NVIDIA GPU with NVENC support
+#   - Intel GPU with Quick Sync support
+#   - Intel / AMD GPU with VAAPI support
+#
+# Encoder Selection:
+#   The script does not hardcode a specific GPU or hardware encoder.
+#   FFmpeg is inspected at runtime and the best available encoder is selected
+#   automatically in the following order:
+#
+#     1. NVIDIA NVENC
+#     2. Intel Quick Sync (QSV)
+#     3. VAAPI
+#     4. CPU libx264
+#
+# Audio:
+#   The default PulseAudio/PipeWire source is detected automatically using:
+#
+#     pactl get-default-source
+#
+# Recording:
+#   The user selects the recording area interactively using slop.
+#   The selected dimensions are automatically adjusted to even values because
+#   H.264 requires even frame dimensions.
+#
+# Container Format:
+#   MKV is intentionally used as the recording container because it is more
+#   resilient to unexpected interruptions than MP4.
+#
+#   Recordings can later be remuxed to MP4 without re-encoding:
+#
+#     ffmpeg -i recording.mkv -c copy recording.mp4
+#
+# Exit Codes:
+#   0   Recording completed successfully
+#   1   Recorder, dependency, or FFmpeg error
+#   2   Unexpected error
+#   130 Operation cancelled with Ctrl+C
+#
+# Notes:
+#   - Hardware encoder availability depends on the installed GPU drivers and
+#     the FFmpeg build.
+#   - If no supported hardware encoder is available, libx264 is used.
+#   - The script is designed to work across different Linux systems without
+#     requiring a specific GPU.
+#
+# ==============================================================================
+
 from __future__ import annotations
 
 import json
