@@ -17,6 +17,7 @@
     - [7. NFS Share Manager](#7-nfs-share-manager)
     - [8. SMB Share Manager (Samba)](#8-smb-share-manager-samba)
     - [9. Network Share Mounter (`nmounter`)](#9-network-share-mounter-nmounter)
+    - [10. Screen Recorder](#10-screen-recorder)
   - [Adding New Utilities](#adding-new-utilities)
   - [Contributing](#contributing)
   - [License](#license)
@@ -829,6 +830,171 @@ Legend: ✅ Mounted | ⭕ Not Mounted
   ```bash
   nmounter completion
   ```
+
+---
+
+### 10. Screen Recorder
+
+**Description**:  
+A lightweight Python screen-recording utility using `FFmpeg` and `slop`. It allows you to interactively select any region of the X11 desktop and record it along with audio. The utility automatically detects available hardware video encoders and falls back to CPU encoding when hardware acceleration is unavailable.
+
+**Features**:
+
+- Interactive screen-region selection using `slop`
+- 60 FPS recording by default
+- Dynamic hardware encoder detection
+- NVIDIA NVENC support
+- Intel Quick Sync (QSV) support
+- VAAPI support for Intel / AMD GPUs
+- Automatic CPU `libx264` fallback
+- No GPU-specific configuration required
+- PulseAudio / PipeWire audio capture
+- Automatically detects the default audio source
+- AAC audio encoding at 192 kbps
+- MKV output format for safer recording
+- Graceful FFmpeg shutdown
+- Accurate final recording duration using `ffprobe`
+- Real-time recording elapsed-time display
+- Automatic adjustment of recording dimensions to even values
+- Dependency validation before recording
+- Clear error messages
+- Meaningful exit codes
+
+**Dependencies**:
+
+- Python 3.x
+- `ffmpeg`
+- `ffprobe`
+- `slop`
+- `pactl`
+
+**Optional Hardware Acceleration**:
+
+The recorder automatically detects available FFmpeg encoders and selects one using the following priority:
+
+1. NVIDIA NVENC
+2. Intel Quick Sync (QSV)
+3. VAAPI
+4. CPU `libx264`
+
+No specific GPU or hardware encoder is hardcoded.
+
+If hardware acceleration is unavailable, the recorder automatically falls back to CPU-based `libx264` encoding.
+
+**Usage**:
+
+Run the recorder:
+
+````bash
+./record-screen.py
+
+Or:
+
+```bash
+python record-screen.py
+````
+
+After starting the script, select the desired screen region using the mouse.
+
+The recorder will display the elapsed recording time:
+
+```text
+Started recording: /home/jackson/Videos/Recordings/recording-2026-08-14_20-07-04.mkv
+Press Ctrl+C to stop.
+
+REC ● 00:00:01
+```
+
+Press `Ctrl+C` to stop the recording gracefully.
+
+**Output**:
+
+Recordings are saved automatically to:
+
+```text
+~/Videos/Recordings/
+```
+
+with the following naming format:
+
+```text
+recording-YYYY-MM-DD_HH-MM-SS.mkv
+```
+
+Example:
+
+```text
+~/Videos/Recordings/recording-2026-08-14_20-07-04.mkv
+```
+
+**Examples**:
+
+🎥 Start a screen recording:
+
+```bash
+./record-screen.py
+```
+
+🖱️ Select the recording area:
+
+```text
+Select an area with the mouse...
+Recording area: 1920x1080 at (0,0)
+```
+
+⏺️ Recording in progress:
+
+```text
+REC ● 00:01:32
+```
+
+⏹️ Stop with:
+
+```text
+Ctrl+C
+```
+
+The script then gracefully finalizes the recording and reports the actual saved duration:
+
+```text
+Stopping recording...
+Saved to: /home/michael/Videos/Recordings/recording-2026-08-14_20-07-04.mkv
+Recording Duration: 92.43 seconds
+```
+
+**Container Format**:
+
+The recorder uses `MKV` instead of `MP4` because MKV is more resilient if the recording process is unexpectedly interrupted.
+
+The recording can be remuxed to MP4 without re-encoding:
+
+```bash
+ffmpeg -i recording.mkv -c copy recording.mp4
+```
+
+**Notes**:
+
+- The recorder currently targets X11 using `x11grab`.
+- `slop` is used for interactive region selection.
+- Audio is captured from the default PulseAudio/PipeWire source returned by:
+
+```bash
+pactl get-default-source
+```
+
+- Hardware encoder availability depends on the installed GPU drivers and FFmpeg build.
+- If no supported hardware encoder is available, `libx264` is used automatically.
+- Recording dimensions are automatically adjusted to even values because H.264 requires even frame dimensions.
+- The script is designed to work across different Linux systems without requiring a specific GPU.
+
+**Exit Codes**:
+
+| Code  | Description                           |
+| ----- | ------------------------------------- |
+| `0`   | Recording completed successfully      |
+| `1`   | Recorder, dependency, or FFmpeg error |
+| `2`   | Unexpected error                      |
+| `130` | Operation cancelled with `Ctrl+C`     |
 
 ---
 
