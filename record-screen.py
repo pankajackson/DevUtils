@@ -316,30 +316,81 @@ class ScreenRecorder:
     # Audio
     # ------------------------------------------------------------------
 
-    def _get_audio_source(self) -> str:
-        """Get the default PulseAudio/PipeWire source."""
+    def _get_audio_sources(self) -> tuple[str, str]:
+        """Get the default microphone and current system-audio monitor."""
 
         try:
-            result = subprocess.run(
+            # --------------------------------------------------------------
+            # Default microphone/input source
+            # --------------------------------------------------------------
+            mic_result = subprocess.run(
                 ["pactl", "get-default-source"],
                 capture_output=True,
                 text=True,
                 check=True,
             )
+
+            mic_source = mic_result.stdout.strip()
+
+            if not mic_source:
+                raise RecorderError("No default microphone source was found.")
+
+            # --------------------------------------------------------------
+            # Current/default audio output
+            # --------------------------------------------------------------
+            sink_result = subprocess.run(
+                ["pactl", "get-default-sink"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+            sink = sink_result.stdout.strip()
+
+            if not sink:
+                raise RecorderError("No default audio output was found.")
+
+            # PulseAudio/PipeWire exposes the audio being played through
+            # an output device as a ".monitor" source.
+            monitor_source = f"{sink}.monitor"
+
+            # --------------------------------------------------------------
+            # Verify that the monitor actually exists
+            # --------------------------------------------------------------
+            sources_result = subprocess.run(
+                ["pactl", "list", "short", "sources"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+            available_sources = {
+                line.split()[1]
+                for line in sources_result.stdout.splitlines()
+                if len(line.split()) >= 2
+            }
+
+            if monitor_source not in available_sources:
+                raise RecorderError(
+                    "Could not find the monitor source for the current "
+                    f"audio output:\n\n"
+                    f"Output:  {sink}\n"
+                    f"Monitor: {monitor_source}"
+                )
+
+            return mic_source, monitor_source
+
         except subprocess.CalledProcessError as exc:
+            error = exc.stderr.strip()
+
             raise RecorderError(
-                "Could not determine the default audio source.\n"
+                "Could not determine the system audio sources.\n"
                 "Make sure PulseAudio/PipeWire is running."
+                + (f"\n\n{error}" if error else "")
             ) from exc
+
         except OSError as exc:
             raise RecorderError(f"Failed to execute pactl: {exc}") from exc
-
-        source = result.stdout.strip()
-
-        if not source:
-            raise RecorderError("No default audio source was found.")
-
-        return source
 
     # ------------------------------------------------------------------
     # Start recording
@@ -363,7 +414,7 @@ class ScreenRecorder:
             out_dir / f"recording-{datetime.now():%Y-%m-%d_%H-%M-%S}.mkv"
         )
 
-        audio_source = self._get_audio_source()
+        mic_source, system_source = self._get_audio_sources()
 
         video_args = self._video_encoder_args()
 
@@ -393,17 +444,33 @@ class ScreenRecorder:
             # ----------------------------------------------------------
             # Audio input
             # ----------------------------------------------------------
+            # Microphone input
             "-f",
             "pulse",
             "-thread_queue_size",
             "1024",
             "-i",
-            audio_source,
+            mic_source,
+            # System audio input
+            "-f",
+            "pulse",
+            "-thread_queue_size",
+            "1024",
+            "-i",
+            system_source,
             # ----------------------------------------------------------
             # Frame synchronization
             # ----------------------------------------------------------
             "-fps_mode",
             "cfr",
+            # Mix microphone + system audio
+            "-filter_complex",
+            "[1:a][2:a]"
+            "amix=inputs=2:"
+            "duration=longest:"
+            "dropout_transition=2:"
+            "normalize=0"
+            "[aout]",
             # ----------------------------------------------------------
             # Video encoder
             # ----------------------------------------------------------
@@ -411,6 +478,10 @@ class ScreenRecorder:
             # ----------------------------------------------------------
             # Audio encoder
             # ----------------------------------------------------------
+            "-map",
+            "0:v",
+            "-map",
+            "[aout]",
             "-c:a",
             "aac",
             "-b:a",
