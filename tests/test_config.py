@@ -1,8 +1,7 @@
-from borg_manager.config import load_config
+from lxa_utils.borg_manager.config import load_config
 
 
-
-config = load_config("config/config.yaml")
+config = load_config("./config/config.yaml")
 
 print(config)
 print()
