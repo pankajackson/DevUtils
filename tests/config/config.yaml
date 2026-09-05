@@ -1,8 +1,8 @@
 backup_server:
-  user: lxa-borg
+  # user: lxa-borg
   host: 192.168.1.4
-  port: 2200
-  borg_bin: borg
+  # port: 2200
+  # borg_bin: borg
 
 repository:
   base_dir: /volume1/Borgbackup
@@ -11,14 +11,14 @@ repository:
 backup:
   paths:
     - /home/jackson/Documents
-    - /home/jackson/dwhelper
-  excludes:
-    - "*/node_modules"
-    - "*/.cache"
+#     - /home/jackson/dwhelper
+  # excludes:
+  #   - "*/node_modules"
+#     - "*/.cache"
 
-logging:
-  directory: /volume1/Borgbackup/logs
+# logging:
+#   directory: /volume1/Borgbackup/logs
 
-borg:
-  compression: zstd,6
-  exclude_caches: true
+# borg:
+  # compression: zstd,6
+  # exclude_caches: true

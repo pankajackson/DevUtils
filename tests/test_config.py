@@ -1,7 +1,7 @@
 from lxa_utils.borg_manager.config import load_config
 
 
-config = load_config("./config/config.yaml")
+config = load_config("tests/config/config.yaml")
 
 print(config)
 print()
@@ -29,3 +29,8 @@ print()
 print("Borg:")
 print(f"  Compression:     {config.borg.compression}")
 print(f"  Exclude caches:  {config.borg.exclude_caches}")
+
+print()
+
+print("Logs:")
+print(f"  directory:     {config.logging.directory}")

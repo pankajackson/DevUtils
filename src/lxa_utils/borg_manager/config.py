@@ -4,12 +4,14 @@ import json
 from pathlib import Path
 from typing import Any
 
+import getpass
+
 import yaml
 from pydantic import BaseModel, Field
 
 
 class BackupServerConfig(BaseModel):
-    user: str
+    user: str = Field(default_factory=getpass.getuser)
     host: str
     port: int = 22
     borg_bin: str = "borg"
@@ -21,7 +23,7 @@ class RepositoryConfig(BaseModel):
 
 
 class BackupConfig(BaseModel):
-    paths: list[str] = Field(default_factory=list)
+    paths: list[str] = Field(min_length=1)
     excludes: list[str] = Field(default_factory=list)
 
 
@@ -38,8 +40,16 @@ class Config(BaseModel):
     backup_server: BackupServerConfig
     repository: RepositoryConfig
     backup: BackupConfig
-    logging: LoggingConfig
-    borg: BorgConfig
+    logging: LoggingConfig | None = None
+    borg: BorgConfig = Field(default_factory=BorgConfig)
+
+    def model_post_init(self, __context: Any) -> None:
+        if self.logging is None:
+            self.logging = LoggingConfig(
+                directory=str(
+                    Path(self.repository.base_dir) / "logs"
+                )
+            )
 
 
 def load_config(source: str | Path | dict[str, Any]) -> Config:
