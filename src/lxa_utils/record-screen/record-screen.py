@@ -95,6 +95,7 @@
 
 from __future__ import annotations
 
+import os
 import json
 import shutil
 import subprocess
@@ -417,6 +418,13 @@ class ScreenRecorder:
         mic_source, system_source = self._get_audio_sources()
 
         video_args = self._video_encoder_args()
+        
+        display = os.environ.get("DISPLAY")
+
+        if not display:
+            raise RecorderError(
+                "DISPLAY environment variable is not set."
+            )
 
         cmd = [
             "ffmpeg",
@@ -440,7 +448,7 @@ class ScreenRecorder:
             "-thread_queue_size",
             "1024",
             "-i",
-            f":0.0+{x},{y}",
+            f"{display}+{x},{y}",
             # ----------------------------------------------------------
             # Audio input
             # ----------------------------------------------------------
